@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Impulso | Compras y ventas</title>
+  <style>
+    :root {
+      --ink: #17231f;
+      --muted: #6b7771;
+      --paper: #f5f1e8;
+      --panel: #fffdf7;
+      --line: #dedbd0;
+      --green: #1d6b55;
+      --mint: #dcefe4;
+      --orange: #d8753e;
+      --yellow: #f0c85b;
+      --red: #b95047;
+      --shadow: 0 18px 45px rgba(30, 52, 44, .09);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font-family: Georgia, 'Times New Roman', serif; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .app { min-height: 100vh; display: grid; grid-template-columns: 238px 1fr; }
+    aside { background: var(--ink); color: #f4f1e7; padding: 28px 18px; display: flex; flex-direction: column; gap: 32px; }
+    .brand { padding: 0 12px; }
+    .brand small { color: #9fcab5; font: 700 11px/1.2 Arial, sans-serif; letter-spacing: .18em; text-transform: uppercase; }
+    .brand h1 { margin: 8px 0 0; font-size: 29px; letter-spacing: -.04em; }
+    nav { display: grid; gap: 7px; }
+    nav button { color: #c4d0c8; border: 0; background: transparent; text-align: left; border-radius: 10px; padding: 12px 13px; font: 600 14px Arial, sans-serif; }
+    nav button:hover, nav button.active { background: #2d4b40; color: #fffdf7; }
+    .tip { margin-top: auto; padding: 16px; border: 1px solid #476157; border-radius: 12px; color: #d7e6da; font: 13px/1.45 Arial, sans-serif; }
+    main { padding: 28px clamp(20px, 4vw, 54px) 46px; max-width: 1440px; width: 100%; }
+    .topline { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 28px; }
+    .eyebrow { color: var(--green); font: 700 11px Arial, sans-serif; letter-spacing: .16em; text-transform: uppercase; }
+    h2 { margin: 5px 0; font-size: clamp(29px, 4vw, 44px); letter-spacing: -.055em; line-height: .98; }
+    .subtle { color: var(--muted); font: 14px/1.45 Arial, sans-serif; }
+    .date-chip { border: 1px solid var(--line); border-radius: 30px; padding: 10px 14px; color: var(--muted); font: 12px Arial, sans-serif; white-space: nowrap; background: rgba(255,255,255,.38); }
+    .view { display: none; }
+    .view.active { display: block; animation: rise .35s ease both; }
+    @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
+    .metric, .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+    .metric { padding: 17px 18px; min-height: 112px; }
+    .metric .label { color: var(--muted); font: 700 11px Arial, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+    .metric strong { display: block; margin: 15px 0 5px; font-size: 29px; letter-spacing: -.04em; }
+    .metric span { color: var(--green); font: 12px Arial, sans-serif; }
+    .metric.warn span { color: var(--orange); }
+    .grid { display: grid; grid-template-columns: 1.25fr .75fr; gap: 18px; }
+    .panel { padding: 21px; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 16px; }
+    .panel h3 { margin: 0; font-size: 20px; letter-spacing: -.03em; }
+    .panel-head small { color: var(--muted); font: 12px Arial, sans-serif; }
+    .bars { display: flex; align-items: end; height: 170px; gap: 12px; border-bottom: 1px solid var(--line); padding: 0 4px; }
+    .bar-col { flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: end; gap: 7px; }
+    .bar { width: min(42px, 70%); height: var(--height); background: var(--green); border-radius: 7px 7px 0 0; min-height: 4px; }
+    .bar-col em { color: var(--muted); font: 11px Arial, sans-serif; font-style: normal; }
+    .bar-col b { color: var(--ink); font: 10px Arial, sans-serif; }
+    .list { display: grid; gap: 11px; }
+    .list-row { display: flex; justify-content: space-between; align-items: center; gap: 15px; padding-bottom: 11px; border-bottom: 1px solid #ebe7dd; }
+    .list-row:last-child { border-bottom: 0; padding-bottom: 0; }
+    .list-row b { display: block; font-size: 14px; }
+    .list-row small { color: var(--muted); font: 12px Arial, sans-serif; }
+    .amount { text-align: right; font: 700 14px Arial, sans-serif; }
+    .amount.green { color: var(--green); }
+    .amount.orange { color: var(--orange); }
+    .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 17px; flex-wrap: wrap; }
+    .toolbar .filters { display: flex; gap: 8px; flex-wrap: wrap; }
+    input, select { color: var(--ink); background: #fffdf7; border: 1px solid var(--line); border-radius: 8px; padding: 10px 11px; outline: none; font: 13px Arial, sans-serif; }
+    .period-filter { display: flex; align-items: center; gap: 8px; color: var(--muted); font: 700 11px Arial, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+    input:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(29,107,85,.1); }
+    .primary, .secondary, .danger { border: 0; border-radius: 8px; padding: 10px 14px; font: 700 12px Arial, sans-serif; }
+    .primary { background: var(--green); color: white; }
+    .secondary { background: var(--mint); color: var(--green); }
+    .danger { background: #f7dfda; color: var(--red); }
+    table { width: 100%; border-collapse: collapse; font: 13px Arial, sans-serif; }
+    th { color: var(--muted); text-align: left; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; padding: 0 10px 10px; }
+    td { border-top: 1px solid #ebe7dd; padding: 13px 10px; vertical-align: middle; }
+    td:first-child, th:first-child { padding-left: 0; }
+    td:last-child, th:last-child { padding-right: 0; text-align: right; }
+    .pill { display: inline-block; border-radius: 20px; padding: 5px 8px; background: var(--mint); color: var(--green); font-size: 11px; }
+    .pill.orange { background: #fae8d7; color: var(--orange); }
+    .empty { color: var(--muted); padding: 25px 0; text-align: center; font: 13px Arial, sans-serif; }
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(23,35,31,.42); align-items: center; justify-content: center; padding: 20px; z-index: 3; }
+    .modal-backdrop.open { display: flex; }
+    .modal { width: min(520px, 100%); max-height: 92vh; overflow: auto; background: var(--panel); border-radius: 16px; padding: 24px; box-shadow: 0 25px 70px rgba(0,0,0,.22); }
+    .modal h3 { margin: 0 0 18px; font-size: 25px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+    .field { display: grid; gap: 6px; }
+    .field.full { grid-column: 1 / -1; }
+    .field label { color: var(--muted); font: 700 10px Arial, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+    .purchase-lines { display: grid; gap: 9px; }
+    .purchase-line { display: grid; grid-template-columns: minmax(0, 1.6fr) .55fr .75fr auto; gap: 8px; align-items: end; }
+    .purchase-line .field label { display: none; }
+    .remove-line { border: 0; background: transparent; color: var(--red); font: 700 18px Arial, sans-serif; padding: 9px 4px; }
+    .add-line { justify-self: start; margin-top: 8px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+    @media (max-width: 1100px) { .metrics { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 900px) { .app { grid-template-columns: 1fr; } aside { padding: 17px 16px; gap: 17px; } nav { display: flex; overflow-x: auto; } nav button { white-space: nowrap; } .tip { display: none; } main { padding-top: 23px; } .metrics { grid-template-columns: repeat(2, 1fr); } .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 560px) { .topline { display: block; } .date-chip { display: inline-block; margin-top: 12px; } .metrics { gap: 8px; } .metric { padding: 13px; min-height: 96px; } .metric strong { font-size: 23px; margin-top: 11px; } .panel { padding: 16px; border-radius: 11px; } table { min-width: 620px; } .table-scroll { overflow-x: auto; } .form-grid { grid-template-columns: 1fr; } .field.full { grid-column: auto; } .purchase-line { grid-template-columns: minmax(0, 1fr) minmax(64px, .5fr) minmax(78px, .7fr) auto; gap: 5px; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="brand"><small>Tu negocio en orden</small><h1>Impulso</h1></div>
+      <nav id="nav">
+        <button class="active" data-view="dashboard">Resumen</button>
+        <button data-view="products">Productos</button>
+        <button data-view="purchases">Compras</button>
+        <button data-view="sales">Ventas</button>
+        <button data-view="customers">Clientes</button>
+      </nav>
+      <div class="tip"><b>Idea del día</b><br>Registra también el costo de envío. Una venta puede verse rentable y no serlo después de los gastos.</div>
+    </aside>
+    <main>
+      <div class="topline"><div><div class="eyebrow">Panel de control</div><h2 id="pageTitle">Tu negocio, en una mirada</h2><div class="subtle">La información que necesitas para decidir qué comprar, vender y cobrar.</div></div><div><div class="period-filter"><label for="periodFilter">Periodo</label><input id="periodFilter" type="month"></div><div class="date-chip" id="today"></div></div></div>
+
+      <section class="view active" id="dashboard">
+        <div class="metrics" id="metrics"></div>
+        <div class="grid">
+          <div class="panel"><div class="panel-head"><h3>Ventas del periodo</h3><small>Ingresos registrados</small></div><div class="bars" id="salesChart"></div></div>
+          <div class="panel"><div class="panel-head"><h3>Por cobrar</h3><small>Atención prioritaria</small></div><div class="list" id="debtList"></div></div>
+          <div class="panel"><div class="panel-head"><h3>Productos con movimiento</h3><small>Últimas ventas</small></div><div class="list" id="topProducts"></div></div>
+          <div class="panel"><div class="panel-head"><h3>Inventario atento</h3><small>Revisa antes de comprar</small></div><div class="list" id="stockList"></div></div>
+        </div>
+      </section>
+
+      <section class="view" id="products"><div class="toolbar"><div><div class="eyebrow">Catálogo</div><h2>Productos</h2></div><button class="primary" data-modal="productModal">+ Nuevo producto</button></div><div class="panel"><div class="toolbar"><div class="filters"><input id="productSearch" placeholder="Buscar producto..."><select id="brandFilter"><option value="">Todas las marcas</option></select></div><small class="subtle" id="productCount"></small></div><div class="table-scroll"><table><thead><tr><th>Producto</th><th>Marca</th><th>Categoría</th><th>Precio</th><th>Existencia</th><th>Estado</th><th></th></tr></thead><tbody id="productsTable"></tbody></table></div></div></section>
+      <section class="view" id="purchases"><div class="toolbar"><div><div class="eyebrow">Abastecimiento</div><h2>Compras</h2></div><button class="primary" data-modal="purchaseModal">+ Registrar compra</button></div><div class="panel"><div class="panel-head"><h3>Historial de compras</h3><small>El costo alimenta tu cálculo de ganancia.</small></div><div class="table-scroll"><table><thead><tr><th>Fecha</th><th>Referencia</th><th>Marca</th><th>Productos</th><th>Total</th><th>Estado</th></tr></thead><tbody id="purchasesTable"></tbody></table></div></div></section>
+      <section class="view" id="sales"><div class="toolbar"><div><div class="eyebrow">Ingresos</div><h2>Ventas</h2></div><button class="primary" data-modal="saleModal">+ Registrar venta</button></div><div class="panel"><div class="panel-head"><h3>Ventas recientes</h3><small>Ganancia estimada por operación.</small></div><div class="table-scroll"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Productos</th><th>Total</th><th>Ganancia</th><th>Pago</th></tr></thead><tbody id="salesTable"></tbody></table></div></div></section>
+      <section class="view" id="customers"><div class="toolbar"><div><div class="eyebrow">Relaciones</div><h2>Clientes</h2></div><button class="primary" data-modal="customerModal">+ Nuevo cliente</button></div><div class="panel"><div class="panel-head"><h3>Clientes y saldos</h3><small>Cuida la relación y el flujo de efectivo.</small></div><div class="table-scroll"><table><thead><tr><th>Cliente</th><th>Contacto</th><th>Última compra</th><th>Compras</th><th>Saldo pendiente</th><th></th></tr></thead><tbody id="customersTable"></tbody></table></div></div></section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="productModal"><form class="modal" data-form="product"><h3>Nuevo producto</h3><div class="form-grid"><div class="field full"><label>Nombre</label><input name="name" required placeholder="Ej. Crema corporal" /></div><div class="field"><label>Marca</label><input name="brand" required placeholder="L'Bel" /></div><div class="field"><label>Categoría</label><input name="category" required placeholder="Cuidado personal" /></div><div class="field"><label>Costo unitario</label><input name="cost" type="number" min="0" step="0.01" required /></div><div class="field"><label>Precio de venta</label><input name="price" type="number" min="0" step="0.01" required /></div><div class="field"><label>Existencia inicial</label><input name="stock" type="number" min="0" step="1" value="0" required /></div></div><div class="modal-actions"><button type="button" class="secondary close-modal">Cancelar</button><button class="primary">Guardar producto</button></div></form></div>
+  <div class="modal-backdrop" id="customerModal"><form class="modal" data-form="customer"><h3>Nuevo cliente</h3><div class="form-grid"><div class="field full"><label>Nombre completo</label><input name="name" required /></div><div class="field"><label>Teléfono</label><input name="phone" placeholder="Opcional" /></div><div class="field"><label>Nota</label><input name="note" placeholder="Colonia, referencia..." /></div></div><div class="modal-actions"><button type="button" class="secondary close-modal">Cancelar</button><button class="primary">Guardar cliente</button></div></form></div>
+  <div class="modal-backdrop" id="purchaseModal"><form class="modal" data-form="purchase"><h3>Registrar compra</h3><div class="form-grid"><div class="field"><label>Fecha</label><input name="purchaseDate" type="date" required /></div><div class="field"><label>Referencia</label><input name="reference" placeholder="Pedido catálogo" /></div><div class="field full"><label>Productos</label><div class="purchase-lines" id="purchaseLines"></div><button type="button" class="secondary add-line" id="addPurchaseLine">+ Agregar producto</button></div><div class="field"><label>Gastos adicionales</label><input name="expenses" type="number" min="0" step="0.01" value="0" placeholder="Envío, transporte..." /></div><div class="field"><label>Nota</label><input name="note" placeholder="Opcional" /></div></div><div class="modal-actions"><button type="button" class="secondary close-modal">Cancelar</button><button class="primary">Agregar compra</button></div></form></div>
+  <div class="modal-backdrop" id="saleModal"><form class="modal" data-form="sale"><h3>Registrar venta</h3><div class="form-grid"><div class="field full"><label>Cliente</label><select name="customerId" id="saleCustomer" required></select></div><div class="field full"><label>Producto</label><select name="productId" id="saleProduct" required></select></div><div class="field"><label>Cantidad</label><input name="quantity" type="number" min="1" value="1" required /></div><div class="field"><label>Precio unitario</label><input name="price" id="salePrice" type="number" min="0" step="0.01" required /></div><div class="field"><label>Pago recibido</label><input name="paid" type="number" min="0" step="0.01" required /></div><div class="field"><label>Vencimiento</label><input name="dueDate" type="date" /></div></div><div class="modal-actions"><button type="button" class="secondary close-modal">Cancelar</button><button class="primary">Guardar venta</button></div></form></div>
+
+  <script>
+    const seed = {
+      products: [
+        { id: 'p1', name: 'Set de brochas Glow', brand: 'L\'Bel', category: 'Cosméticos', cost: 180, price: 290, stock: 5 },
+        { id: 'p2', name: 'Organizador multiuso', brand: 'Betterware', category: 'Hogar', cost: 125, price: 210, stock: 2 },
+        { id: 'p3', name: 'Crema corporal karité', brand: 'Chantal', category: 'Cuidado personal', cost: 95, price: 160, stock: 8 },
+        { id: 'p4', name: 'Perfume floral 50 ml', brand: 'L\'Bel', category: 'Fragancias', cost: 240, price: 390, stock: 1 }
+      ],
+      customers: [{ id: 'c1', name: 'María González', phone: '55 1234 9876', note: 'Vecina', balance: 180, purchases: 3, last: '2026-09-18' }, { id: 'c2', name: 'Laura Méndez', phone: '55 8421 2201', note: 'Trabajo', balance: 0, purchases: 5, last: '2026-09-16' }, { id: 'c3', name: 'Patricia Ríos', phone: '55 3001 1122', note: 'Familia', balance: 390, purchases: 2, last: '2026-09-12' }],
+      purchases: [{ id: 'b1', date: '2026-09-19', reference: 'Catálogo 09', brand: 'L\'Bel', product: 'Set de brochas Glow', quantity: 4, total: 720, status: 'Recibida' }, { id: 'b2', date: '2026-09-15', reference: 'Pedido 1842', brand: 'Betterware', product: 'Organizador multiuso', quantity: 3, total: 375, status: 'Recibida' }],
+      sales: [{ id: 's1', date: '2026-09-21', customerId: 'c2', customer: 'Laura Méndez', productId: 'p3', product: 'Crema corporal karité', quantity: 2, total: 320, profit: 130, paid: 320, status: 'Pagada' }, { id: 's2', date: '2026-09-18', customerId: 'c1', customer: 'María González', productId: 'p1', product: 'Set de brochas Glow', quantity: 1, total: 290, profit: 110, paid: 110, dueDate: '2026-09-28', status: 'Abono' }, { id: 's3', date: '2026-09-12', customerId: 'c3', customer: 'Patricia Ríos', productId: 'p4', product: 'Perfume floral 50 ml', quantity: 1, total: 390, profit: 150, paid: 0, dueDate: '2026-09-25', status: 'Pendiente' }]
+    };
+    let data = JSON.parse(localStorage.getItem('impulso-data')) || seed;
+    const money = value => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(value || 0);
+    const date = value => new Date(value + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }).replace('.', '');
+    const save = () => localStorage.setItem('impulso-data', JSON.stringify(data));
+    const byId = (list, id) => list.find(item => item.id === id);
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    document.getElementById('periodFilter').value = currentMonth;
+    document.getElementById('today').textContent = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
+
+    function render() {
+      const period = document.getElementById('periodFilter').value || currentMonth;
+      const periodSales = data.sales.filter(sale => sale.date.startsWith(period));
+      const periodPurchases = data.purchases.filter(purchase => purchase.date.startsWith(period));
+      const revenue = periodSales.reduce((sum, sale) => sum + sale.total, 0), investment = periodPurchases.reduce((sum, purchase) => sum + purchase.total, 0), profit = periodSales.reduce((sum, sale) => sum + sale.profit, 0), debts = data.customers.reduce((sum, customer) => sum + (customer.balance || 0), 0), stockValue = data.products.reduce((sum, product) => sum + product.cost * product.stock, 0);
+      document.getElementById('metrics').innerHTML = `<div class="metric"><div class="label">Ventas del periodo</div><strong>${money(revenue)}</strong><span>↑ ${periodSales.length} operaciones</span></div><div class="metric"><div class="label">Inversión realizada</div><strong>${money(investment)}</strong><span>${periodPurchases.length} compras en el mes</span></div><div class="metric"><div class="label">Ganancia estimada</div><strong>${money(profit)}</strong><span>Margen ${(revenue ? profit / revenue * 100 : 0).toFixed(0)}%</span></div><div class="metric warn"><div class="label">Por cobrar</div><strong>${money(debts)}</strong><span>${data.customers.filter(c => c.balance > 0).length} clientes con saldo</span></div><div class="metric"><div class="label">Valor en inventario</div><strong>${money(stockValue)}</strong><span>${data.products.reduce((sum, p) => sum + p.stock, 0)} unidades disponibles</span></div>`;
+      document.getElementById('debtList').innerHTML = data.customers.filter(c => c.balance > 0).sort((a,b) => b.balance - a.balance).map(c => `<div class="list-row"><div><b>${c.name}</b><small>Saldo pendiente</small></div><div class="amount orange">${money(c.balance)}</div></div>`).join('') || '<div class="empty">Todo cobrado por ahora.</div>';
+      const productTotals = {}; data.sales.forEach(s => productTotals[s.product] = (productTotals[s.product] || 0) + s.quantity);
+      document.getElementById('topProducts').innerHTML = Object.entries(productTotals).sort((a,b) => b[1] - a[1]).map(([name, qty]) => `<div class="list-row"><div><b>${name}</b><small>Unidades vendidas</small></div><div class="amount green">${qty}</div></div>`).join('') || '<div class="empty">Registra tu primera venta.</div>';
+      document.getElementById('stockList').innerHTML = data.products.filter(p => p.stock <= 2).map(p => `<div class="list-row"><div><b>${p.name}</b><small>${p.brand} · ${p.stock} disponibles</small></div><span class="pill orange">Revisar</span></div>`).join('') || '<div class="empty">No hay alertas de inventario.</div>';
+      const days = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'], values = days.map((_, i) => periodSales.filter(s => new Date(s.date + 'T12:00:00').getDay() === (i + 1) % 7).reduce((sum, s) => sum + s.total, 0)), max = Math.max(...values, 1);
+      document.getElementById('salesChart').innerHTML = values.map((v, i) => `<div class="bar-col"><b>${v ? money(v) : ''}</b><div class="bar" style="--height:${Math.max(v / max * 125, v ? 8 : 4)}px"></div><em>${days[i]}</em></div>`).join('');
+      renderProducts(); renderPurchases(); renderSales(); renderCustomers(); populateSelects();
+    }
+    function renderProducts() { const query = (document.getElementById('productSearch')?.value || '').toLowerCase(), brand = document.getElementById('brandFilter')?.value || '', list = data.products.filter(p => (!query || `${p.name} ${p.brand} ${p.category}`.toLowerCase().includes(query)) && (!brand || p.brand === brand)); document.getElementById('productCount').textContent = `${list.length} productos`; document.getElementById('productsTable').innerHTML = list.map(p => `<tr><td><b>${p.name}</b><br><small class="subtle">Costo ${money(p.cost)}</small></td><td>${p.brand}</td><td>${p.category}</td><td><b>${money(p.price)}</b></td><td>${p.stock}</td><td><span class="pill ${p.stock <= 2 ? 'orange' : ''}">${p.stock <= 2 ? 'Bajo' : 'Disponible'}</span></td><td><button class="danger" data-delete-product="${p.id}">Eliminar</button></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No encontramos productos.</td></tr>'; }
+    function renderPurchases() { document.getElementById('purchasesTable').innerHTML = data.purchases.slice().reverse().map(p => `<tr><td>${date(p.date)}</td><td><b>${p.reference || 'Sin referencia'}</b></td><td>${p.brand || 'Varias'}</td><td>${p.product ? `${p.product} × ${p.quantity}` : `${p.items?.length || 0} productos`}</td><td><b>${money(p.total)}</b></td><td><span class="pill">${p.status}</span></td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aún no hay compras registradas.</td></tr>'; }
+    function renderSales() { document.getElementById('salesTable').innerHTML = data.sales.slice().reverse().map(s => `<tr><td>${date(s.date)}</td><td><b>${s.customer}</b></td><td>${s.product} × ${s.quantity}</td><td><b>${money(s.total)}</b></td><td class="amount green">+${money(s.profit)}</td><td><span class="pill ${s.status === 'Pendiente' ? 'orange' : ''}">${s.status}</span></td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aún no hay ventas registradas.</td></tr>'; }
+    function renderCustomers() { document.getElementById('customersTable').innerHTML = data.customers.map(c => `<tr><td><b>${c.name}</b><br><small class="subtle">${c.note || ''}</small></td><td>${c.phone || 'Sin teléfono'}</td><td>${c.last ? date(c.last) : '-'}</td><td>${c.purchases || 0}</td><td class="amount ${c.balance ? 'orange' : 'green'}">${c.balance ? money(c.balance) : 'Al corriente'}</td><td><button class="secondary" data-pay-customer="${c.id}">Registrar abono</button></td></tr>`).join(''); }
+    function populateSelects() { const productOptions = data.products.map(p => `<option value="${p.id}">${p.name} · ${money(p.price)}</option>`).join(''); document.getElementById('saleProduct').innerHTML = productOptions; document.getElementById('saleCustomer').innerHTML = data.customers.map(c => `<option value="${c.id}">${c.name}</option>`).join(''); const brands = [...new Set(data.products.map(p => p.brand))]; document.getElementById('brandFilter').innerHTML = '<option value="">Todas las marcas</option>' + brands.map(b => `<option>${b}</option>`).join(''); }
+    function productOptions() { return data.products.map(p => `<option value="${p.id}">${p.name} · ${money(p.cost)}</option>`).join(''); }
+    function addPurchaseLine() { const line = document.createElement('div'); line.className = 'purchase-line'; line.innerHTML = `<div class="field"><label>Producto</label><select name="productId" required>${productOptions()}</select></div><div class="field"><label>Cantidad</label><input name="quantity" type="number" min="1" value="1" required></div><div class="field"><label>Costo unitario</label><input name="cost" type="number" min="0" step="0.01" required></div><button type="button" class="remove-line" title="Quitar producto">×</button>`; document.getElementById('purchaseLines').appendChild(line); line.querySelector('select').addEventListener('change', e => { const product = byId(data.products, e.target.value); line.querySelector('[name="cost"]').value = product?.cost || 0; }); }
+    function openModal(id) { document.getElementById(id).classList.add('open'); if (id === 'purchaseModal') { document.querySelector('[name="purchaseDate"]').value = new Date().toISOString().slice(0, 10); document.getElementById('purchaseLines').innerHTML = ''; addPurchaseLine(); } if (id === 'saleModal') updateSalePrice(); }
+    function closeModals() { document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.remove('open')); }
+    function updateSalePrice() { const p = byId(data.products, document.getElementById('saleProduct').value); if (p) document.getElementById('salePrice').value = p.price; }
+    document.getElementById('nav').addEventListener('click', e => { if (!e.target.dataset.view) return; document.querySelectorAll('nav button').forEach(b => b.classList.remove('active')); e.target.classList.add('active'); document.querySelectorAll('.view').forEach(v => v.classList.remove('active')); document.getElementById(e.target.dataset.view).classList.add('active'); });
+    document.addEventListener('click', e => { if (e.target.dataset.modal) openModal(e.target.dataset.modal); if (e.target.classList.contains('close-modal')) closeModals(); if (e.target.id === 'addPurchaseLine') addPurchaseLine(); if (e.target.classList.contains('remove-line')) { const lines = document.querySelectorAll('.purchase-line'); if (lines.length > 1) e.target.closest('.purchase-line').remove(); } if (e.target.dataset.deleteProduct) { data.products = data.products.filter(p => p.id !== e.target.dataset.deleteProduct); save(); render(); } if (e.target.dataset.payCustomer) { const c = byId(data.customers, e.target.dataset.payCustomer); const amount = Number(prompt(`¿Cuánto abonó ${c.name}?`, c.balance)); if (amount > 0) { c.balance = Math.max(0, c.balance - amount); save(); render(); } } });
+    document.getElementById('productSearch').addEventListener('input', renderProducts); document.getElementById('brandFilter').addEventListener('change', renderProducts); document.getElementById('saleProduct').addEventListener('change', updateSalePrice);
+    document.querySelectorAll('form').forEach(form => form.addEventListener('submit', e => { e.preventDefault(); const values = Object.fromEntries(new FormData(form)); if (form.dataset.form === 'product') data.products.push({ id: 'p' + Date.now(), name: values.name, brand: values.brand, category: values.category, cost: Number(values.cost), price: Number(values.price), stock: Number(values.stock) }); if (form.dataset.form === 'customer') data.customers.push({ id: 'c' + Date.now(), name: values.name, phone: values.phone, note: values.note, balance: 0, purchases: 0, last: '' }); if (form.dataset.form === 'purchase') { const items = [...form.querySelectorAll('.purchase-line')].map(line => { const product = byId(data.products, line.querySelector('[name="productId"]').value), quantity = Number(line.querySelector('[name="quantity"]').value), cost = Number(line.querySelector('[name="cost"]').value); product.stock += quantity; product.cost = cost; return { productId: product.id, product: product.name, brand: product.brand, quantity, cost, total: quantity * cost }; }); const merchandise = items.reduce((sum, item) => sum + item.total, 0), expenses = Number(values.expenses) || 0; data.purchases.push({ id: 'b' + Date.now(), date: values.purchaseDate, reference: values.reference, brand: items.length === 1 ? items[0].brand : 'Varias', product: items.length === 1 ? items[0].product : '', quantity: items.length === 1 ? items[0].quantity : 0, items, expenses, total: merchandise + expenses, note: values.note, status: 'Recibida' }); } if (form.dataset.form === 'sale') { const p = byId(data.products, values.productId), c = byId(data.customers, values.customerId), quantity = Number(values.quantity), price = Number(values.price), total = quantity * price, paid = Number(values.paid); p.stock = Math.max(0, p.stock - quantity); c.balance += Math.max(0, total - paid); c.purchases = (c.purchases || 0) + 1; c.last = new Date().toISOString().slice(0,10); data.sales.push({ id: 's' + Date.now(), date: c.last, customerId: c.id, customer: c.name, productId: p.id, product: p.name, quantity, total, profit: (price - p.cost) * quantity, paid, dueDate: values.dueDate, status: paid >= total ? 'Pagada' : paid > 0 ? 'Abono' : 'Pendiente' }); } save(); form.reset(); closeModals(); render(); }));
+    document.getElementById('periodFilter').addEventListener('change', render);
+    render();
+  </script>
+</body>
+</html>
