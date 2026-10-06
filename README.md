@@ -13,3 +13,4 @@ Para activar sincronización con Supabase, copia `.env.example` a `.env.local`, 
 
 El archivo `app-comprasventas.html` conserva el prototipo original como referencia.
 "# sistemaventas" 
+"# sistemaventas" 
