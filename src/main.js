@@ -1453,7 +1453,7 @@ function openProductModal() {
           <label>Costo total pagado por el paquete</label>
           <div class="input-addon-wrap">
             <span class="prefix">$</span>
-            <input name="pkg_total_cost" id="pkg-cost-input" type="number" step="0.01" min="0" value="0" placeholder="0.00" />
+            <input name="pkg_total_cost" id="pkg-cost-input" type="number" step="0.01" min="0" value="0" placeholder="0.00" onfocus="this.select()" />
           </div>
           <small style="font-size: 11px; color: var(--muted); margin-top: 2px;">
             (Si fue un regalo o incentivo sin costo, déjalo en $0.00).
@@ -1599,13 +1599,13 @@ function openProductModal() {
             </div>
             <div class="field">
               <label>Cant.</label>
-              <input class="pkg-item-qty" type="number" min="1" value="1" required />
+              <input class="pkg-item-qty" type="number" min="1" value="1" required onfocus="this.select()" />
             </div>
             <div class="field">
               <label>Precio revista</label>
               <div class="input-addon-wrap">
                 <span class="prefix">$</span>
-                <input class="pkg-item-price" type="number" step="0.01" min="0" placeholder="0.00" required />
+                <input class="pkg-item-price" type="number" step="0.01" min="0" placeholder="0.00" required onfocus="this.select()" />
               </div>
             </div>
           </div>
@@ -1799,7 +1799,7 @@ function openEditProductModal(product) {
         <label>Costo de compra (tu inversión)</label>
         <div class="input-addon-wrap">
           <span class="prefix">$</span>
-          <input name="cost" id="edit-cost-input" type="number" step="0.01" min="0" value="${product.cost}" required />
+          <input name="cost" id="edit-cost-input" type="number" step="0.01" min="0" value="${product.cost}" required onfocus="this.select()" />
         </div>
       </div>
 
@@ -1807,13 +1807,13 @@ function openEditProductModal(product) {
         <label>Precio de venta al público (Precio revista)</label>
         <div class="input-addon-wrap">
           <span class="prefix">$</span>
-          <input name="price" id="edit-price-input" type="number" step="0.01" min="0" value="${product.price}" required />
+          <input name="price" id="edit-price-input" type="number" step="0.01" min="0" value="${product.price}" required onfocus="this.select()" />
         </div>
       </div>
 
       <div class="form-group full">
         <label>Existencia actual (piezas)</label>
-        <input name="stock" type="number" min="0" value="${product.stock}" required />
+        <input name="stock" type="number" min="0" value="${product.stock}" required onfocus="this.select()" />
       </div>
     </div>
 
