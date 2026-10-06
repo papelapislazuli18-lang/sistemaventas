@@ -2,28 +2,30 @@ import { createClient } from '@supabase/supabase-js';
 import './style.css';
 
 // -------------------------------------------------------------
-// SUPABASE CLIENT SETUP (DEFENSIVE & PRODUCTION READY)
+// SUPABASE CLIENT SETUP (SIEMPRE CONECTADO A LA NUBE Y ROBUSTO)
 // -------------------------------------------------------------
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const DEFAULT_SUPABASE_URL = 'https://mppsqiofllegyhdojybm.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1wcHNxaW9mbGxlZ3loZG9qeWJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyNDU2MDgsImV4cCI6MjEwNjgyMTYwOH0.yvpthk1Yyk2mp6p3hO4akafZPbIVooPnrw7fkpH253g';
 
-const isSupabaseConfigured = Boolean(
-  supabaseUrl &&
-  supabaseKey &&
-  typeof supabaseUrl === 'string' &&
-  supabaseUrl.startsWith('https://') &&
-  !supabaseUrl.includes('tu-proyecto') &&
-  !supabaseKey.includes('tu-clave')
-);
+const envUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+const rawUrl = (envUrl && envUrl.startsWith('https://') && !envUrl.includes('tu-proyecto'))
+  ? envUrl
+  : DEFAULT_SUPABASE_URL;
+
+const supabaseUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
+const supabaseKey = (envKey && !envKey.includes('tu-clave'))
+  ? envKey
+  : DEFAULT_SUPABASE_KEY;
 
 let supabase = null;
-if (isSupabaseConfigured) {
-  try {
-    supabase = createClient(supabaseUrl, supabaseKey);
-  } catch (e) {
-    console.warn('Error inicializando Supabase, usando modo local:', e);
-    supabase = null;
-  }
+let isConnectedToSupabase = false;
+
+try {
+  supabase = createClient(supabaseUrl, supabaseKey);
+} catch (e) {
+  console.warn('Error inicializando Supabase:', e);
+  supabase = null;
 }
 
 // -------------------------------------------------------------
@@ -101,7 +103,9 @@ function showToast(message, icon = '✅') {
 // -------------------------------------------------------------
 // SUPABASE SYNC LAYER
 // -------------------------------------------------------------
-async function initSupabaseData() {
+// SUPABASE SYNC LAYER (TIEMPO REAL Y SINCRONIZACIÓN ENTRE DISPOSITIVOS)
+// -------------------------------------------------------------
+async function initSupabaseData(notify = false) {
   if (!supabase) return;
   try {
     const [pRes, cRes, puRes, sRes] = await Promise.all([
@@ -116,72 +120,119 @@ async function initSupabaseData() {
       return;
     }
 
-    let updated = false;
-    if (pRes.data && pRes.data.length > 0) {
-      state.products = pRes.data.map(p => ({
-        id: p.id,
-        name: p.name,
-        brand: p.brand || '',
-        category: p.category || '',
-        cost: Number(p.cost) || 0,
-        price: Number(p.price) || 0,
-        stock: Number(p.stock) || 0
-      }));
-      updated = true;
-    }
-    if (cRes.data && cRes.data.length > 0) {
-      state.customers = cRes.data.map(c => ({
-        id: c.id,
-        name: c.name,
-        phone: c.phone || '',
-        note: c.note || '',
-        balance: Number(c.balance) || 0
-      }));
-      updated = true;
-    }
-    if (puRes.data && puRes.data.length > 0) {
-      state.purchases = puRes.data.map(pu => ({
-        id: pu.id,
-        purchase_date: pu.purchase_date,
-        reference: pu.reference || '',
-        product_id: pu.product_id,
-        product_name: pu.product_name || '',
-        quantity: Number(pu.quantity) || 1,
-        cost: Number(pu.cost) || 0,
-        expenses: Number(pu.expenses) || 0,
-        total: Number(pu.total) || 0
-      }));
-      updated = true;
-    }
-    if (sRes.data && sRes.data.length > 0) {
-      state.sales = sRes.data.map(s => ({
-        id: s.id,
-        sale_date: s.sale_date,
-        customer_id: s.customer_id,
-        customer_name: s.customer_name || 'Venta directa',
-        product_id: s.product_id,
-        product_name: s.product_name || '',
-        quantity: Number(s.quantity) || 1,
-        unit_price: Number(s.unit_price) || 0,
-        unit_cost: Number(s.unit_cost) || 0,
-        total: Number(s.total) || 0,
-        profit: Number(s.profit) || 0,
-        paid: Number(s.paid) || 0,
-        status: s.status || 'Pagada',
-        due_date: s.due_date || ''
-      }));
-      updated = true;
+    isConnectedToSupabase = true;
+
+    // Rescatar y subir datos locales que el usuario haya creado sin internet/conexión previa
+    const remoteProductIds = new Set((pRes.data || []).map(p => p.id));
+    const unsyncedProducts = (state.products || []).filter(p => !remoteProductIds.has(p.id) && !['p1','p2','p3','p4'].includes(p.id));
+    if (unsyncedProducts.length > 0) {
+      try {
+        await supabase.from('products').insert(unsyncedProducts);
+        const ref = await supabase.from('products').select('*').order('created_at', { ascending: false });
+        if (ref.data) pRes.data = ref.data;
+      } catch (e) {
+        console.warn('Error subiendo productos locales:', e);
+      }
     }
 
-    if (updated) {
-      saveLocal();
-      renderApp();
-      showToast('Datos sincronizados con Supabase', '☁️');
+    const remoteCustomerIds = new Set((cRes.data || []).map(c => c.id));
+    const unsyncedCustomers = (state.customers || []).filter(c => !remoteCustomerIds.has(c.id) && !['c1','c2','c3'].includes(c.id));
+    if (unsyncedCustomers.length > 0) {
+      try {
+        await supabase.from('customers').insert(unsyncedCustomers);
+        const ref = await supabase.from('customers').select('*').order('name', { ascending: true });
+        if (ref.data) cRes.data = ref.data;
+      } catch (e) {
+        console.warn('Error subiendo clientes locales:', e);
+      }
+    }
+
+    const remoteSaleIds = new Set((sRes.data || []).map(s => s.id));
+    const unsyncedSales = (state.sales || []).filter(s => !remoteSaleIds.has(s.id) && !['s1','s2','s3'].includes(s.id));
+    if (unsyncedSales.length > 0) {
+      try {
+        await supabase.from('sales').insert(unsyncedSales);
+        const ref = await supabase.from('sales').select('*').order('sale_date', { ascending: false });
+        if (ref.data) sRes.data = ref.data;
+      } catch (e) {
+        console.warn('Error subiendo ventas locales:', e);
+      }
+    }
+
+    const remotePurchaseIds = new Set((puRes.data || []).map(pu => pu.id));
+    const unsyncedPurchases = (state.purchases || []).filter(pu => !remotePurchaseIds.has(pu.id) && !['b1','b2'].includes(pu.id));
+    if (unsyncedPurchases.length > 0) {
+      try {
+        await supabase.from('purchases').insert(unsyncedPurchases);
+        const ref = await supabase.from('purchases').select('*').order('purchase_date', { ascending: false });
+        if (ref.data) puRes.data = ref.data;
+      } catch (e) {
+        console.warn('Error subiendo compras locales:', e);
+      }
+    }
+
+    // Actualizar estado con los datos reales en Supabase
+    state.products = (pRes.data || []).map(p => ({
+      id: p.id,
+      name: p.name,
+      brand: p.brand || '',
+      category: p.category || '',
+      cost: Number(p.cost) || 0,
+      price: Number(p.price) || 0,
+      stock: Number(p.stock) || 0
+    }));
+
+    state.customers = (cRes.data || []).map(c => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone || '',
+      note: c.note || '',
+      balance: Number(c.balance) || 0
+    }));
+
+    state.purchases = (puRes.data || []).map(pu => ({
+      id: pu.id,
+      purchase_date: pu.purchase_date,
+      reference: pu.reference || '',
+      product_id: pu.product_id,
+      product_name: pu.product_name || '',
+      quantity: Number(pu.quantity) || 1,
+      cost: Number(pu.cost) || 0,
+      expenses: Number(pu.expenses) || 0,
+      total: Number(pu.total) || 0
+    }));
+
+    state.sales = (sRes.data || []).map(s => ({
+      id: s.id,
+      sale_date: s.sale_date,
+      customer_id: s.customer_id,
+      customer_name: s.customer_name || 'Venta directa',
+      product_id: s.product_id,
+      product_name: s.product_name || '',
+      quantity: Number(s.quantity) || 1,
+      unit_price: Number(s.unit_price) || 0,
+      unit_cost: Number(s.unit_cost) || 0,
+      total: Number(s.total) || 0,
+      profit: Number(s.profit) || 0,
+      paid: Number(s.paid) || 0,
+      status: s.status || 'Pagada',
+      due_date: s.due_date || ''
+    }));
+
+    saveLocal();
+    renderApp();
+    if (notify) {
+      showToast('Datos sincronizados con la nube (Supabase)', '☁️');
     }
   } catch (err) {
     console.warn('Error al conectar con Supabase, usando respaldo local:', err);
   }
 }
+
+// Escuchar cuando el usuario regresa a la pestaña para sincronizar en tiempo real
+window.addEventListener('focus', () => {
+  if (supabase) initSupabaseData(false);
+});
 
 // -------------------------------------------------------------
 // APP RENDERING
@@ -204,16 +255,21 @@ function renderApp() {
           ${navButton('purchases', '🚚 Compras')}
           ${navButton('customers', '👥 Clientes')}
         </nav>
-        <div class="connection ${supabase ? 'online' : 'offline'}">
-          <div>
-            <span class="status-dot ${supabase ? 'online' : 'offline'}"></span>
-            ${supabase ? 'Supabase conectado' : 'Modo local (Sin Supabase)'}
+        <div class="connection ${isConnectedToSupabase ? 'online' : 'offline'}">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="status-dot ${isConnectedToSupabase ? 'online' : 'offline'}"></span>
+              <strong>${isConnectedToSupabase ? 'Nube conectada' : 'Modo local'}</strong>
+            </div>
           </div>
-          <small>
-            ${supabase
-              ? 'Tus datos están protegidos en la nube en tiempo real.'
-              : 'Los datos se guardan en este navegador. Para sincronizar en la nube, configura Supabase.'}
+          <small style="display: block; margin-top: 5px;">
+            ${isConnectedToSupabase
+              ? 'Tus datos se guardan y sincronizan en Supabase en tiempo real en todas tus computadoras.'
+              : 'Conectando con la base de datos...'}
           </small>
+          <button type="button" class="btn btn-sm btn-outline" id="btn-force-sync" style="margin-top: 10px; width: 100%; justify-content: center; font-size: 11.5px; padding: 6px 10px;">
+            🔄 Sincronizar datos
+          </button>
         </div>
       </aside>
       <main>
@@ -235,6 +291,19 @@ function renderApp() {
   document.querySelectorAll('[data-action="add-purchase"]').forEach(b => b.addEventListener('click', () => openPurchaseModal()));
   document.querySelectorAll('[data-action="add-product"]').forEach(b => b.addEventListener('click', openProductModal));
   document.querySelectorAll('[data-action="add-customer"]').forEach(b => b.addEventListener('click', openCustomerModal));
+
+  // Sync button listener
+  const syncBtn = document.getElementById('btn-force-sync');
+  if (syncBtn) {
+    syncBtn.addEventListener('click', () => {
+      syncBtn.disabled = true;
+      syncBtn.textContent = 'Sincronizando...';
+      initSupabaseData(true).finally(() => {
+        syncBtn.disabled = false;
+        syncBtn.textContent = '🔄 Sincronizar datos';
+      });
+    });
+  }
 
   // View-specific listeners
   attachViewEvents();
@@ -578,6 +647,7 @@ function renderSalesView() {
                 </td>
                 <td>
                   <div class="actions-cell">
+                    <button class="btn btn-sm btn-outline" data-edit-sale="${s.id}" title="Editar venta">✏️ Editar</button>
                     <button class="btn btn-sm btn-danger" data-delete-sale="${s.id}" title="Eliminar registro de venta">🗑️</button>
                   </div>
                 </td>
@@ -634,6 +704,7 @@ function renderPurchasesView() {
                 <td><span class="price-tag">${money(p.total)}</span></td>
                 <td>
                   <div class="actions-cell">
+                    <button class="btn btn-sm btn-outline" data-edit-purchase="${p.id}" title="Editar compra">✏️ Editar</button>
                     <button class="btn btn-sm btn-danger" data-delete-purchase="${p.id}" title="Eliminar registro de compra">🗑️</button>
                   </div>
                 </td>
@@ -820,40 +891,89 @@ function attachViewEvents() {
     });
   });
 
-  // Delete Sale
+  // Edit Sale
+  document.querySelectorAll('[data-edit-sale]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = byId(state.sales, btn.dataset.editSale);
+      if (s) openEditSaleModal(s);
+    });
+  });
+
+  // Delete Sale (con restauración de inventario y saldo)
   document.querySelectorAll('[data-delete-sale]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.deleteSale;
-      if (confirm('¿Eliminar este registro de venta?')) {
+      const sale = byId(state.sales, id);
+      if (!sale) return;
+
+      if (confirm(`¿Eliminar la venta de "${sale.product_name}"? Se regresarán ${sale.quantity} piezas al inventario.`)) {
+        // Regresar piezas al inventario del producto
+        const product = byId(state.products, sale.product_id);
+        if (product) {
+          product.stock += sale.quantity;
+        }
+
+        // Si el cliente quedó a deber por esta venta, descontar la deuda del saldo
+        const customer = sale.customer_id ? byId(state.customers, sale.customer_id) : null;
+        const pending = Math.max(0, sale.total - sale.paid);
+        if (customer && pending > 0) {
+          customer.balance = Math.max(0, (customer.balance || 0) - pending);
+        }
+
         state.sales = state.sales.filter(item => item.id !== id);
         saveLocal();
         renderApp();
-        showToast('Venta eliminada');
+        showToast('Venta eliminada y piezas devueltas al inventario');
+
         if (supabase) {
           try {
-            await supabase.from('sales').delete().eq('id', id);
+            await Promise.all([
+              supabase.from('sales').delete().eq('id', id),
+              product ? supabase.from('products').update({ stock: product.stock }).eq('id', product.id) : Promise.resolve(),
+              customer ? supabase.from('customers').update({ balance: customer.balance }).eq('id', customer.id) : Promise.resolve()
+            ]);
           } catch (e) {
-            console.warn(e);
+            console.warn('Error eliminando venta en Supabase:', e);
           }
         }
       }
     });
   });
 
-  // Delete Purchase
+  // Edit Purchase
+  document.querySelectorAll('[data-edit-purchase]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = byId(state.purchases, btn.dataset.editPurchase);
+      if (p) openEditPurchaseModal(p);
+    });
+  });
+
+  // Delete Purchase (con deducción de inventario)
   document.querySelectorAll('[data-delete-purchase]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.deletePurchase;
-      if (confirm('¿Eliminar este registro de compra?')) {
+      const purchase = byId(state.purchases, id);
+      if (!purchase) return;
+
+      if (confirm(`¿Eliminar el registro de compra de "${purchase.product_name}"? Se descontarán ${purchase.quantity} piezas del inventario.`)) {
+        const product = byId(state.products, purchase.product_id);
+        if (product) {
+          product.stock = Math.max(0, product.stock - purchase.quantity);
+        }
+
         state.purchases = state.purchases.filter(item => item.id !== id);
         saveLocal();
         renderApp();
-        showToast('Compra eliminada');
+        showToast('Compra eliminada e inventario ajustado');
+
         if (supabase) {
           try {
-            await supabase.from('purchases').delete().eq('id', id);
+            await Promise.all([
+              supabase.from('purchases').delete().eq('id', id),
+              product ? supabase.from('products').update({ stock: product.stock }).eq('id', product.id) : Promise.resolve()
+            ]);
           } catch (e) {
-            console.warn(e);
+            console.warn('Error eliminando compra en Supabase:', e);
           }
         }
       }
@@ -1185,6 +1305,228 @@ function openSaleModal() {
 }
 
 // -------------------------------------------------------------
+// MODAL: EDITAR VENTA (CRUD COMPLETO)
+// -------------------------------------------------------------
+function openEditSaleModal(sale) {
+  const productOptions = (state.products || []).map(p =>
+    `<option value="${p.id}" ${p.id === sale.product_id ? 'selected' : ''}>
+      ${p.name} · Precio catálogo: ${money(p.price)} · Stock: ${p.stock}
+    </option>`
+  ).join('');
+
+  const customerOptions = (state.customers || []).map(c =>
+    `<option value="${c.id}" ${c.id === sale.customer_id ? 'selected' : ''}>
+      ${c.name} (Saldo: ${money(c.balance)})
+    </option>`
+  ).join('');
+
+  const formHtml = `
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Fecha de venta</label>
+        <input name="sale_date" type="date" value="${sale.sale_date}" required />
+      </div>
+
+      <div class="form-group">
+        <label>Cliente</label>
+        <select name="customer_id" id="edit-sale-customer-select">
+          <option value="__direct__" ${!sale.customer_id ? 'selected' : ''}>-- Venta de contado / Mostrador --</option>
+          ${customerOptions}
+        </select>
+      </div>
+
+      <div class="form-group full">
+        <label>Producto vendido</label>
+        <select name="product_id" id="edit-sale-product-select" required>
+          ${productOptions}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Cantidad (piezas)</label>
+        <input name="quantity" id="edit-sale-qty-input" type="number" min="1" value="${sale.quantity}" required onfocus="this.select()" />
+      </div>
+
+      <div class="form-group">
+        <label>Precio unitario pactado</label>
+        <div class="input-addon-wrap">
+          <span class="prefix">$</span>
+          <input name="unit_price" id="edit-sale-price-input" type="number" step="0.01" min="0" value="${sale.unit_price}" required onfocus="this.select()" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Monto pagado / cobrado</label>
+        <div class="input-addon-wrap">
+          <span class="prefix">$</span>
+          <input name="paid" id="edit-sale-paid-input" type="number" step="0.01" min="0" value="${sale.paid}" required onfocus="this.select()" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Fecha límite de pago (si queda saldo)</label>
+        <input name="due_date" type="date" value="${sale.due_date || ''}" />
+      </div>
+    </div>
+
+    <!-- Resumen dinámico -->
+    <div class="calc-preview">
+      <div class="calc-preview-row">
+        <span>Total de la venta:</span>
+        <strong id="edit-sale-total-val">${money(sale.total)}</strong>
+      </div>
+      <div class="calc-preview-row">
+        <span>Ganancia estimada:</span>
+        <strong class="green" id="edit-sale-profit-val">+${money(sale.profit)}</strong>
+      </div>
+      <div class="calc-preview-row highlight">
+        <span id="edit-sale-debt-label">${sale.paid < sale.total ? 'Saldo restante por cobrar:' : 'Estado:'}</span>
+        <strong id="edit-sale-debt-val" class="${sale.paid < sale.total ? 'orange' : 'green'}">
+          ${sale.paid < sale.total ? money(sale.total - sale.paid) : '¡Completamente pagada!'}
+        </strong>
+      </div>
+    </div>
+  `;
+
+  showModal({
+    icon: '✏️',
+    title: 'Editar venta',
+    subtitle: 'Modifica los datos de la venta, pagos recibidos o corrige cantidades.',
+    formHtml,
+    onOpen: form => {
+      const prodSelect = form.querySelector('#edit-sale-product-select');
+      const qtyInput = form.querySelector('#edit-sale-qty-input');
+      const priceInput = form.querySelector('#edit-sale-price-input');
+      const paidInput = form.querySelector('#edit-sale-paid-input');
+
+      const updateCalculations = () => {
+        const prod = byId(state.products, prodSelect.value);
+        const qty = Number(qtyInput.value) || 1;
+        const unitPrice = Number(priceInput.value) || 0;
+        const paid = Number(paidInput.value) || 0;
+        const unitCost = prod ? prod.cost : (sale.unit_cost || 0);
+
+        const total = qty * unitPrice;
+        const profit = (unitPrice - unitCost) * qty;
+        const debt = Math.max(0, total - paid);
+
+        const totEl = document.getElementById('edit-sale-total-val');
+        const profEl = document.getElementById('edit-sale-profit-val');
+        const debtEl = document.getElementById('edit-sale-debt-val');
+        const debtLbl = document.getElementById('edit-sale-debt-label');
+
+        if (totEl) totEl.textContent = money(total);
+        if (profEl) profEl.textContent = `+${money(profit)}`;
+        if (debtEl) {
+          debtEl.textContent = debt > 0 ? money(debt) : '¡Completamente pagada!';
+          debtEl.className = debt > 0 ? 'orange' : 'green';
+        }
+        if (debtLbl) debtLbl.textContent = debt > 0 ? 'Saldo restante por cobrar:' : 'Estado:';
+      };
+
+      prodSelect.addEventListener('change', () => {
+        const p = byId(state.products, prodSelect.value);
+        if (p) {
+          priceInput.value = p.price;
+          updateCalculations();
+        }
+      });
+
+      qtyInput.addEventListener('input', updateCalculations);
+      priceInput.addEventListener('input', updateCalculations);
+      paidInput.addEventListener('input', updateCalculations);
+    },
+    onSubmit: async formData => {
+      const newProductId = formData.get('product_id');
+      const newProduct = byId(state.products, newProductId);
+      if (!newProduct) throw new Error('Producto no encontrado');
+
+      const newQty = Number(formData.get('quantity')) || 1;
+      const newUnitPrice = Number(formData.get('unit_price')) || 0;
+      const newPaid = Number(formData.get('paid')) || 0;
+      const newTotal = newQty * newUnitPrice;
+      const newProfit = (newUnitPrice - newProduct.cost) * newQty;
+      const newSaleDate = formData.get('sale_date') || today();
+      const newDueDate = formData.get('due_date') || '';
+      const newCustomerId = formData.get('customer_id');
+
+      let newCustomerName = 'Venta al mostrador';
+      let newCustomer = null;
+      if (newCustomerId !== '__direct__') {
+        newCustomer = byId(state.customers, newCustomerId);
+        if (newCustomer) newCustomerName = newCustomer.name;
+      }
+
+      // Ajuste de inventario entre producto anterior y nuevo
+      const oldProduct = byId(state.products, sale.product_id);
+      const oldQty = sale.quantity;
+
+      if (oldProduct && oldProduct.id === newProduct.id) {
+        newProduct.stock += (oldQty - newQty);
+      } else {
+        if (oldProduct) oldProduct.stock += oldQty;
+        newProduct.stock = Math.max(0, newProduct.stock - newQty);
+      }
+
+      // Ajuste de saldos del cliente
+      const oldCustomer = sale.customer_id ? byId(state.customers, sale.customer_id) : null;
+      const oldDebt = Math.max(0, sale.total - sale.paid);
+      const newDebt = Math.max(0, newTotal - newPaid);
+
+      let newStatus = 'Pagada';
+      if (newDebt > 0) {
+        newStatus = newPaid > 0 ? 'Abono' : 'Pendiente';
+      }
+
+      if (oldCustomer && newCustomer && oldCustomer.id === newCustomer.id) {
+        newCustomer.balance = Math.max(0, (newCustomer.balance || 0) - oldDebt + newDebt);
+      } else {
+        if (oldCustomer) oldCustomer.balance = Math.max(0, (oldCustomer.balance || 0) - oldDebt);
+        if (newCustomer) newCustomer.balance = (newCustomer.balance || 0) + newDebt;
+      }
+
+      // Actualizar datos de la venta
+      sale.sale_date = newSaleDate;
+      sale.customer_id = newCustomer ? newCustomer.id : null;
+      sale.customer_name = newCustomerName;
+      sale.product_id = newProduct.id;
+      sale.product_name = newProduct.name;
+      sale.quantity = newQty;
+      sale.unit_price = newUnitPrice;
+      sale.unit_cost = newProduct.cost;
+      sale.total = newTotal;
+      sale.profit = newProfit;
+      sale.paid = newPaid;
+      sale.status = newStatus;
+      sale.due_date = newDueDate;
+
+      showToast('Venta actualizada');
+
+      if (supabase) {
+        try {
+          const updates = [
+            supabase.from('sales').update(sale).eq('id', sale.id),
+            supabase.from('products').update({ stock: newProduct.stock }).eq('id', newProduct.id)
+          ];
+          if (oldProduct && oldProduct.id !== newProduct.id) {
+            updates.push(supabase.from('products').update({ stock: oldProduct.stock }).eq('id', oldProduct.id));
+          }
+          if (newCustomer) {
+            updates.push(supabase.from('customers').update({ balance: newCustomer.balance }).eq('id', newCustomer.id));
+          }
+          if (oldCustomer && (!newCustomer || oldCustomer.id !== newCustomer.id)) {
+            updates.push(supabase.from('customers').update({ balance: oldCustomer.balance }).eq('id', oldCustomer.id));
+          }
+          await Promise.all(updates);
+        } catch (e) {
+          console.warn('Error al actualizar venta en Supabase:', e);
+        }
+      }
+    }
+  });
+}
+
+// -------------------------------------------------------------
 // MODAL 2: REGISTRAR COMPRA / SURTIDO
 // -------------------------------------------------------------
 function openPurchaseModal(preselectedProductId = null) {
@@ -1368,6 +1710,154 @@ function openPurchaseModal(preselectedProductId = null) {
 }
 
 // -------------------------------------------------------------
+// MODAL: EDITAR COMPRA / SURTIDO (CRUD COMPLETO)
+// -------------------------------------------------------------
+function openEditPurchaseModal(purchase) {
+  const productOptions = (state.products || []).map(p =>
+    `<option value="${p.id}" ${p.id === purchase.product_id ? 'selected' : ''}>
+      ${p.name} · Costo actual: ${money(p.cost)} · Stock: ${p.stock}
+    </option>`
+  ).join('');
+
+  const formHtml = `
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Fecha de compra</label>
+        <input name="purchase_date" type="date" value="${purchase.purchase_date}" required />
+      </div>
+
+      <div class="form-group">
+        <label>Referencia / Pedido</label>
+        <input name="reference" value="${purchase.reference || ''}" placeholder="Ej. Pedido catálogo Campaña 15" required />
+      </div>
+
+      <div class="form-group full">
+        <label>Producto abastecido</label>
+        <select name="product_id" id="edit-purchase-product-select" required>
+          ${productOptions}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Cantidad ingresada (piezas)</label>
+        <input name="quantity" id="edit-purchase-qty-input" type="number" min="1" value="${purchase.quantity}" required onfocus="this.select()" />
+      </div>
+
+      <div class="form-group">
+        <label>Costo unitario de compra</label>
+        <div class="input-addon-wrap">
+          <span class="prefix">$</span>
+          <input name="cost" id="edit-purchase-cost-input" type="number" step="0.01" min="0" value="${purchase.cost}" required onfocus="this.select()" />
+        </div>
+      </div>
+
+      <div class="form-group full">
+        <label>Gastos adicionales / Envío</label>
+        <div class="input-addon-wrap">
+          <span class="prefix">$</span>
+          <input name="expenses" id="edit-purchase-expenses-input" type="number" step="0.01" min="0" value="${purchase.expenses || 0}" onfocus="this.select()" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Resumen dinámico -->
+    <div class="calc-preview">
+      <div class="calc-preview-row">
+        <span>Subtotal mercancía:</span>
+        <strong id="edit-purchase-subtotal-val">${money(purchase.quantity * purchase.cost)}</strong>
+      </div>
+      <div class="calc-preview-row">
+        <span>Flete / Envío:</span>
+        <strong id="edit-purchase-expenses-val">${money(purchase.expenses || 0)}</strong>
+      </div>
+      <div class="calc-preview-row highlight">
+        <span>Total invertido:</span>
+        <strong class="green" id="edit-purchase-total-val">${money(purchase.total)}</strong>
+      </div>
+    </div>
+  `;
+
+  showModal({
+    icon: '✏️',
+    title: 'Editar compra',
+    subtitle: 'Modifica la cantidad de piezas recibidas, costos o referencia.',
+    formHtml,
+    onOpen: form => {
+      const qtyInput = form.querySelector('#edit-purchase-qty-input');
+      const costInput = form.querySelector('#edit-purchase-cost-input');
+      const expInput = form.querySelector('#edit-purchase-expenses-input');
+
+      const updateCalculations = () => {
+        const qty = Number(qtyInput.value) || 1;
+        const cost = Number(costInput.value) || 0;
+        const exp = Number(expInput.value) || 0;
+        const subtotal = qty * cost;
+        const total = subtotal + exp;
+
+        const subEl = document.getElementById('edit-purchase-subtotal-val');
+        const expEl = document.getElementById('edit-purchase-expenses-val');
+        const totEl = document.getElementById('edit-purchase-total-val');
+
+        if (subEl) subEl.textContent = money(subtotal);
+        if (expEl) expEl.textContent = money(exp);
+        if (totEl) totEl.textContent = money(total);
+      };
+
+      qtyInput.addEventListener('input', updateCalculations);
+      costInput.addEventListener('input', updateCalculations);
+      expInput.addEventListener('input', updateCalculations);
+    },
+    onSubmit: async formData => {
+      const newProductId = formData.get('product_id');
+      const newProduct = byId(state.products, newProductId);
+      if (!newProduct) throw new Error('Producto no encontrado');
+
+      const newQty = Number(formData.get('quantity')) || 1;
+      const newCost = Number(formData.get('cost')) || 0;
+      const newExpenses = Number(formData.get('expenses')) || 0;
+      const newTotal = (newQty * newCost) + newExpenses;
+
+      // Ajuste de inventario
+      const oldProduct = byId(state.products, purchase.product_id);
+      const oldQty = purchase.quantity;
+
+      if (oldProduct && oldProduct.id === newProduct.id) {
+        newProduct.stock = Math.max(0, newProduct.stock - oldQty + newQty);
+      } else {
+        if (oldProduct) oldProduct.stock = Math.max(0, oldProduct.stock - oldQty);
+        newProduct.stock += newQty;
+      }
+
+      purchase.purchase_date = formData.get('purchase_date') || today();
+      purchase.reference = formData.get('reference') || 'Surtido';
+      purchase.product_id = newProduct.id;
+      purchase.product_name = newProduct.name;
+      purchase.quantity = newQty;
+      purchase.cost = newCost;
+      purchase.expenses = newExpenses;
+      purchase.total = newTotal;
+
+      showToast('Compra actualizada');
+
+      if (supabase) {
+        try {
+          const updates = [
+            supabase.from('purchases').update(purchase).eq('id', purchase.id),
+            supabase.from('products').update({ stock: newProduct.stock }).eq('id', newProduct.id)
+          ];
+          if (oldProduct && oldProduct.id !== newProduct.id) {
+            updates.push(supabase.from('products').update({ stock: oldProduct.stock }).eq('id', oldProduct.id));
+          }
+          await Promise.all(updates);
+        } catch (e) {
+          console.warn('Error al actualizar compra en Supabase:', e);
+        }
+      }
+    }
+  });
+}
+
+// -------------------------------------------------------------
 // MODAL 3: NUEVO PRODUCTO (INDIVIDUAL O PAQUETE DE REVISTA)
 // -------------------------------------------------------------
 function openProductModal() {
@@ -1453,7 +1943,7 @@ function openProductModal() {
           <label>Costo total pagado por el paquete</label>
           <div class="input-addon-wrap">
             <span class="prefix">$</span>
-            <input name="pkg_total_cost" id="pkg-cost-input" type="number" step="0.01" min="0" value="0" placeholder="0.00" onfocus="this.select()" />
+            <input name="pkg_total_cost" id="pkg-cost-input" type="number" step="0.01" min="0" value="0" placeholder="0.00" />
           </div>
           <small style="font-size: 11px; color: var(--muted); margin-top: 2px;">
             (Si fue un regalo o incentivo sin costo, déjalo en $0.00).
@@ -1599,13 +2089,13 @@ function openProductModal() {
             </div>
             <div class="field">
               <label>Cant.</label>
-              <input class="pkg-item-qty" type="number" min="1" value="1" required onfocus="this.select()" />
+              <input class="pkg-item-qty" type="number" min="1" value="1" required />
             </div>
             <div class="field">
               <label>Precio revista</label>
               <div class="input-addon-wrap">
                 <span class="prefix">$</span>
-                <input class="pkg-item-price" type="number" step="0.01" min="0" placeholder="0.00" required onfocus="this.select()" />
+                <input class="pkg-item-price" type="number" step="0.01" min="0" placeholder="0.00" required />
               </div>
             </div>
           </div>
@@ -1799,7 +2289,7 @@ function openEditProductModal(product) {
         <label>Costo de compra (tu inversión)</label>
         <div class="input-addon-wrap">
           <span class="prefix">$</span>
-          <input name="cost" id="edit-cost-input" type="number" step="0.01" min="0" value="${product.cost}" required onfocus="this.select()" />
+          <input name="cost" id="edit-cost-input" type="number" step="0.01" min="0" value="${product.cost}" required />
         </div>
       </div>
 
@@ -1807,13 +2297,13 @@ function openEditProductModal(product) {
         <label>Precio de venta al público (Precio revista)</label>
         <div class="input-addon-wrap">
           <span class="prefix">$</span>
-          <input name="price" id="edit-price-input" type="number" step="0.01" min="0" value="${product.price}" required onfocus="this.select()" />
+          <input name="price" id="edit-price-input" type="number" step="0.01" min="0" value="${product.price}" required />
         </div>
       </div>
 
       <div class="form-group full">
         <label>Existencia actual (piezas)</label>
-        <input name="stock" type="number" min="0" value="${product.stock}" required onfocus="this.select()" />
+        <input name="stock" type="number" min="0" value="${product.stock}" required />
       </div>
     </div>
 
