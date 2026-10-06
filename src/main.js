@@ -111,7 +111,6 @@ async function initSupabaseData() {
       supabase.from('sales').select('*').order('sale_date', { ascending: false })
     ]);
 
-    // If tables don't exist yet, avoid erroring out
     if (pRes.error || cRes.error || puRes.error || sRes.error) {
       console.warn('Tablas de Supabase no disponibles o sin permisos RLS:', pRes.error || cRes.error);
       return;
@@ -434,7 +433,7 @@ function renderProductsView() {
         <p>Consulta tus costos de compra, precios de venta al público y margen de ganancia por artículo.</p>
       </div>
       <div class="header-actions">
-        <button class="btn btn-primary" data-action="add-product">+ Nuevo producto</button>
+        <button class="btn btn-primary" data-action="add-product">+ Nuevo producto / Paquete</button>
         <button class="btn btn-secondary" data-action="add-purchase">🚚 Surtir mercancía</button>
       </div>
     </header>
@@ -698,6 +697,7 @@ function renderCustomersView() {
                       ? `<button class="btn btn-sm btn-secondary" data-abono-id="${c.id}" title="Registrar pago o abono">💰 Abonar</button>`
                       : ''
                     }
+                    <button class="btn btn-sm btn-outline" data-edit-customer="${c.id}" title="Editar cliente">✏️ Editar</button>
                     <button class="btn btn-sm btn-danger" data-delete-customer="${c.id}" title="Eliminar cliente">🗑️</button>
                   </div>
                 </td>
@@ -772,6 +772,14 @@ function attachViewEvents() {
           }
         }
       }
+    });
+  });
+
+  // Edit Customer
+  document.querySelectorAll('[data-edit-customer]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const c = byId(state.customers, btn.dataset.editCustomer);
+      if (c) openEditCustomerModal(c);
     });
   });
 
@@ -919,7 +927,7 @@ function showModal({ icon, title, subtitle, formHtml, onOpen, onSubmit }) {
     submitBtn.textContent = 'Guardando...';
 
     try {
-      await onSubmit(formData);
+      await onSubmit(formData, form);
       closeModal();
       saveLocal();
       renderApp();
@@ -1360,76 +1368,198 @@ function openPurchaseModal(preselectedProductId = null) {
 }
 
 // -------------------------------------------------------------
-// MODAL 3: NUEVO PRODUCTO
+// MODAL 3: NUEVO PRODUCTO (INDIVIDUAL O PAQUETE DE REVISTA)
 // -------------------------------------------------------------
 function openProductModal() {
+  let mode = 'single'; // 'single' | 'package'
+
   const formHtml = `
-    <div class="form-grid">
-      <div class="form-group full">
-        <label>Nombre del producto</label>
-        <input name="name" placeholder="Ej. Crema facial hidratante, Set de cubiertos..." required />
-      </div>
+    <!-- Selector de modo: Producto individual vs Paquete de revista -->
+    <div class="modal-type-toggle">
+      <button type="button" class="active" id="mode-single-btn">🟢 Producto individual</button>
+      <button type="button" id="mode-package-btn">📦 Paquete / Set de revista</button>
+    </div>
 
-      <div class="form-group">
-        <label>Marca</label>
-        <input name="brand" placeholder="Ej. L'Bel, Betterware, Natura, Tupperware" required />
-      </div>
+    <!-- SECCIÓN A: PRODUCTO INDIVIDUAL -->
+    <div id="section-single">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>Nombre del producto</label>
+          <input name="name" id="single-name-input" placeholder="Ej. Crema facial hidratante, Set de brochas..." required />
+        </div>
 
-      <div class="form-group">
-        <label>Categoría</label>
-        <input name="category" placeholder="Ej. Cosméticos, Hogar, Cocina, Cuidado personal" required />
-      </div>
+        <div class="form-group">
+          <label>Marca</label>
+          <input name="brand" id="single-brand-input" placeholder="Ej. L'Bel, Betterware, Natura, Tupperware" required />
+        </div>
 
-      <div class="form-group">
-        <label>Costo de compra (lo que te cuesta a ti)</label>
-        <div class="input-addon-wrap">
-          <span class="prefix">$</span>
-          <input name="cost" id="np-cost-input" type="number" step="0.01" min="0" placeholder="0.00" required />
+        <div class="form-group">
+          <label>Categoría</label>
+          <input name="category" id="single-category-input" placeholder="Ej. Cosméticos, Hogar, Cuidado personal" required />
+        </div>
+
+        <div class="form-group">
+          <label>Costo de compra (lo que te cuesta a ti)</label>
+          <div class="input-addon-wrap">
+            <span class="prefix">$</span>
+            <input name="cost" id="np-cost-input" type="number" step="0.01" min="0" placeholder="0.00" required />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Costo de venta al público (lo que cobras)</label>
+          <div class="input-addon-wrap">
+            <span class="prefix">$</span>
+            <input name="price" id="np-price-input" type="number" step="0.01" min="0" placeholder="0.00" required />
+          </div>
+        </div>
+
+        <div class="form-group full">
+          <label>Existencia inicial (piezas disponibles)</label>
+          <input name="stock" id="np-stock-input" type="number" min="0" value="1" required />
         </div>
       </div>
 
-      <div class="form-group">
-        <label>Costo de venta al público (lo que cobras)</label>
-        <div class="input-addon-wrap">
-          <span class="prefix">$</span>
-          <input name="price" id="np-price-input" type="number" step="0.01" min="0" placeholder="0.00" required />
+      <div class="calc-preview">
+        <div class="calc-preview-row">
+          <span>Ganancia estimada por pieza:</span>
+          <strong class="green" id="np-profit-val">+$0.00</strong>
         </div>
-      </div>
-
-      <div class="form-group full">
-        <label>Existencia inicial (piezas disponibles hoy)</label>
-        <input name="stock" id="np-stock-input" type="number" min="0" value="1" required />
+        <div class="calc-preview-row">
+          <span>Margen de utilidad:</span>
+          <strong id="np-margin-val">0%</strong>
+        </div>
+        <div class="calc-preview-row highlight">
+          <span>Inversión en este lote inicial:</span>
+          <strong id="np-batch-cost">$0.00</strong>
+        </div>
       </div>
     </div>
 
-    <!-- Vista previa de ganancia estimada -->
-    <div class="calc-preview">
-      <div class="calc-preview-row">
-        <span>Ganancia estimada por pieza:</span>
-        <strong class="green" id="np-profit-val">+$0.00</strong>
+    <!-- SECCIÓN B: PAQUETE DE REVISTA -->
+    <div id="section-package" style="display: none;">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>Nombre del paquete / Promoción</label>
+          <input name="pkg_name" id="pkg-name-input" placeholder="Ej. Kit Bienvenida Campaña 16, Set Rutina Facial..." />
+        </div>
+
+        <div class="form-group">
+          <label>Marca del paquete</label>
+          <input name="pkg_brand" id="pkg-brand-input" placeholder="Ej. L'Bel, Ésika, Natura, Betterware..." />
+        </div>
+
+        <div class="form-group">
+          <label>Costo total pagado por el paquete</label>
+          <div class="input-addon-wrap">
+            <span class="prefix">$</span>
+            <input name="pkg_total_cost" id="pkg-cost-input" type="number" step="0.01" min="0" value="0" placeholder="0.00" />
+          </div>
+          <small style="font-size: 11px; color: var(--muted); margin-top: 2px;">
+            (Si fue un regalo o incentivo sin costo, déjalo en $0.00).
+          </small>
+        </div>
       </div>
-      <div class="calc-preview-row">
-        <span>Margen de utilidad:</span>
-        <strong id="np-margin-val">0%</strong>
+
+      <div class="package-section">
+        <div class="package-section-title">
+          <span>Artículos incluidos (se venderán a precio de revista)</span>
+          <span style="font-weight: 500; font-size: 11px; text-transform: none; color: var(--muted);">
+            Solo ingresa el precio al público de cada uno
+          </span>
+        </div>
+
+        <div class="package-items-list" id="package-items-list">
+          <!-- Las filas de artículos del paquete se agregan dinámicamente -->
+        </div>
+
+        <button type="button" class="btn btn-sm btn-outline btn-add-package-item" id="btn-add-pkg-item">
+          + Agregar otro artículo al paquete
+        </button>
       </div>
-      <div class="calc-preview-row highlight">
-        <span>Inversión en este lote inicial:</span>
-        <strong id="np-batch-cost">$0.00</strong>
+
+      <div class="calc-preview" style="margin-top: 14px;">
+        <div class="calc-preview-row">
+          <span>Total de artículos en el paquete:</span>
+          <strong id="pkg-summary-items">0 piezas</strong>
+        </div>
+        <div class="calc-preview-row">
+          <span>Venta total esperada (Precio de revista):</span>
+          <strong class="green" id="pkg-summary-retail">$0.00</strong>
+        </div>
+        <div class="calc-preview-row">
+          <span>Inversión pagada por el paquete:</span>
+          <strong id="pkg-summary-cost">$0.00</strong>
+        </div>
+        <div class="calc-preview-row highlight">
+          <span>Ganancia estimada del paquete:</span>
+          <strong class="green" id="pkg-summary-profit">+$0.00</strong>
+        </div>
       </div>
     </div>
   `;
 
   showModal({
     icon: '✨',
-    title: 'Agregar nuevo producto',
-    subtitle: 'Registra el costo de compra y el precio al público para calcular tus ganancias.',
+    title: 'Agregar producto o paquete',
+    subtitle: 'Registra productos individuales o ingresa un set comprado en paquete.',
     formHtml,
     onOpen: form => {
+      const modeSingleBtn = form.querySelector('#mode-single-btn');
+      const modePackageBtn = form.querySelector('#mode-package-btn');
+      const sectionSingle = form.querySelector('#section-single');
+      const sectionPackage = form.querySelector('#section-package');
+      const submitBtn = document.getElementById('modal-submit-btn');
+
+      // Inputs single
+      const singleName = form.querySelector('#single-name-input');
+      const singleBrand = form.querySelector('#single-brand-input');
+      const singleCategory = form.querySelector('#single-category-input');
       const costInput = form.querySelector('#np-cost-input');
       const priceInput = form.querySelector('#np-price-input');
       const stockInput = form.querySelector('#np-stock-input');
 
-      const updateProfit = () => {
+      // Package elements
+      const pkgItemsList = form.querySelector('#package-items-list');
+      const addPkgItemBtn = form.querySelector('#btn-add-pkg-item');
+      const pkgCostInput = form.querySelector('#pkg-cost-input');
+
+      // Mode switching
+      modeSingleBtn.addEventListener('click', () => {
+        mode = 'single';
+        modeSingleBtn.classList.add('active');
+        modePackageBtn.classList.remove('active');
+        sectionSingle.style.display = 'block';
+        sectionPackage.style.display = 'none';
+        singleName.required = true;
+        singleBrand.required = true;
+        singleCategory.required = true;
+        costInput.required = true;
+        priceInput.required = true;
+        if (submitBtn) submitBtn.textContent = 'Guardar producto';
+      });
+
+      modePackageBtn.addEventListener('click', () => {
+        mode = 'package';
+        modePackageBtn.classList.add('active');
+        modeSingleBtn.classList.remove('active');
+        sectionSingle.style.display = 'none';
+        sectionPackage.style.display = 'block';
+        singleName.required = false;
+        singleBrand.required = false;
+        singleCategory.required = false;
+        costInput.required = false;
+        priceInput.required = false;
+        if (submitBtn) submitBtn.textContent = 'Guardar paquete y artículos';
+        if (pkgItemsList.children.length === 0) {
+          addPackageItemRow();
+          addPackageItemRow();
+        }
+        updatePackageCalculations();
+      });
+
+      // Single calculations
+      const updateSingleProfit = () => {
         const cost = Number(costInput.value) || 0;
         const price = Number(priceInput.value) || 0;
         const stock = Number(stockInput.value) || 0;
@@ -1444,30 +1574,200 @@ function openProductModal() {
         if (batEl) batEl.textContent = `${money(cost * stock)} (${stock} piezas)`;
       };
 
-      costInput.addEventListener('input', updateProfit);
-      priceInput.addEventListener('input', updateProfit);
-      stockInput.addEventListener('input', updateProfit);
+      costInput.addEventListener('input', updateSingleProfit);
+      priceInput.addEventListener('input', updateSingleProfit);
+      stockInput.addEventListener('input', updateSingleProfit);
+
+      // Package item row generator
+      function addPackageItemRow() {
+        const idx = pkgItemsList.children.length + 1;
+        const card = document.createElement('div');
+        card.className = 'package-item-card';
+        card.innerHTML = `
+          <div class="package-item-card-header">
+            <span class="package-item-number">Artículo #${idx}</span>
+            <button type="button" class="btn-remove-pkg-item" title="Quitar este artículo">&times;</button>
+          </div>
+          <div class="package-item-grid">
+            <div class="field">
+              <label>Nombre del artículo</label>
+              <input class="pkg-item-name" placeholder="Ej. Crema de noche, Perfume..." required />
+            </div>
+            <div class="field">
+              <label>Categoría</label>
+              <input class="pkg-item-cat" placeholder="Cuidado facial, Fragancia..." value="Cuidado personal" />
+            </div>
+            <div class="field">
+              <label>Cant.</label>
+              <input class="pkg-item-qty" type="number" min="1" value="1" required />
+            </div>
+            <div class="field">
+              <label>Precio revista</label>
+              <div class="input-addon-wrap">
+                <span class="prefix">$</span>
+                <input class="pkg-item-price" type="number" step="0.01" min="0" placeholder="0.00" required />
+              </div>
+            </div>
+          </div>
+        `;
+
+        card.querySelector('.btn-remove-pkg-item').addEventListener('click', () => {
+          if (pkgItemsList.children.length > 1) {
+            card.remove();
+            // Re-number badges
+            pkgItemsList.querySelectorAll('.package-item-card').forEach((c, i) => {
+              c.querySelector('.package-item-number').textContent = `Artículo #${i + 1}`;
+            });
+            updatePackageCalculations();
+          } else {
+            alert('El paquete debe contener al menos un artículo.');
+          }
+        });
+
+        card.querySelectorAll('input').forEach(inp => {
+          inp.addEventListener('input', updatePackageCalculations);
+        });
+
+        pkgItemsList.appendChild(card);
+        updatePackageCalculations();
+      }
+
+      function updatePackageCalculations() {
+        const packageCost = Number(pkgCostInput.value) || 0;
+        let totalPieces = 0;
+        let totalRetailValue = 0;
+
+        pkgItemsList.querySelectorAll('.package-item-card').forEach(card => {
+          const qty = Number(card.querySelector('.pkg-item-qty')?.value) || 1;
+          const price = Number(card.querySelector('.pkg-item-price')?.value) || 0;
+          totalPieces += qty;
+          totalRetailValue += (qty * price);
+        });
+
+        const profit = totalRetailValue - packageCost;
+        const marginPct = totalRetailValue > 0 ? Math.round((profit / totalRetailValue) * 100) : 0;
+
+        const itEl = document.getElementById('pkg-summary-items');
+        const retEl = document.getElementById('pkg-summary-retail');
+        const costEl = document.getElementById('pkg-summary-cost');
+        const profEl = document.getElementById('pkg-summary-profit');
+
+        if (itEl) itEl.textContent = `${totalPieces} pieza(s) en ${pkgItemsList.children.length} artículo(s)`;
+        if (retEl) retEl.textContent = money(totalRetailValue);
+        if (costEl) costEl.textContent = money(packageCost);
+        if (profEl) profEl.textContent = `+${money(profit)} (${marginPct}% de margen)`;
+      }
+
+      addPkgItemBtn.addEventListener('click', () => {
+        addPackageItemRow();
+      });
+
+      pkgCostInput.addEventListener('input', updatePackageCalculations);
     },
-    onSubmit: async formData => {
-      const newProduct = {
-        id: crypto.randomUUID(),
-        name: formData.get('name').trim(),
-        brand: formData.get('brand').trim() || 'General',
-        category: formData.get('category').trim() || 'General',
-        cost: Number(formData.get('cost')) || 0,
-        price: Number(formData.get('price')) || 0,
-        stock: Number(formData.get('stock')) || 0
-      };
+    onSubmit: async (formData, form) => {
+      if (mode === 'single') {
+        // MODO PRODUCTO INDIVIDUAL
+        const newProduct = {
+          id: crypto.randomUUID(),
+          name: formData.get('name').trim(),
+          brand: formData.get('brand').trim() || 'General',
+          category: formData.get('category').trim() || 'General',
+          cost: Number(formData.get('cost')) || 0,
+          price: Number(formData.get('price')) || 0,
+          stock: Number(formData.get('stock')) || 0
+        };
 
-      state.products = state.products || [];
-      state.products.push(newProduct);
-      showToast(`Producto "${newProduct.name}" agregado al catálogo`, '✨');
+        state.products = state.products || [];
+        state.products.push(newProduct);
+        showToast(`Producto "${newProduct.name}" agregado al catálogo`, '✨');
 
-      if (supabase) {
-        try {
-          await supabase.from('products').insert([newProduct]);
-        } catch (e) {
-          console.warn('Error al guardar producto en Supabase:', e);
+        if (supabase) {
+          try {
+            await supabase.from('products').insert([newProduct]);
+          } catch (e) {
+            console.warn('Error al guardar producto en Supabase:', e);
+          }
+        }
+      } else {
+        // MODO PAQUETE / SET DE REVISTA
+        const pkgName = (formData.get('pkg_name') || 'Paquete promocional').trim();
+        const pkgBrand = (formData.get('pkg_brand') || 'General').trim();
+        const pkgCost = Number(formData.get('pkg_total_cost')) || 0;
+
+        const cards = form.querySelectorAll('.package-item-card');
+        if (cards.length === 0) throw new Error('Agrega al menos un artículo al paquete.');
+
+        const rawItems = [];
+        let totalRetailSum = 0;
+
+        cards.forEach(card => {
+          const name = card.querySelector('.pkg-item-name')?.value.trim();
+          const category = card.querySelector('.pkg-item-cat')?.value.trim() || 'General';
+          const qty = Number(card.querySelector('.pkg-item-qty')?.value) || 1;
+          const price = Number(card.querySelector('.pkg-item-price')?.value) || 0;
+
+          if (name) {
+            rawItems.push({ name, category, qty, price });
+            totalRetailSum += (qty * price);
+          }
+        });
+
+        if (rawItems.length === 0) throw new Error('Por favor escribe el nombre de al menos un artículo del paquete.');
+
+        // Crear los productos distribuyendo el costo proporcionalmente al precio de revista
+        const createdProducts = [];
+        rawItems.forEach(it => {
+          let assignedUnitCost = 0;
+          if (pkgCost > 0 && totalRetailSum > 0) {
+            // Prorrateo ponderado según el precio de revista
+            assignedUnitCost = Math.round(((it.price / totalRetailSum) * pkgCost) * 100) / 100;
+          } else if (pkgCost > 0) {
+            const totalQty = rawItems.reduce((acc, r) => acc + r.qty, 0);
+            assignedUnitCost = Math.round((pkgCost / (totalQty || 1)) * 100) / 100;
+          }
+
+          const prod = {
+            id: crypto.randomUUID(),
+            name: it.name,
+            brand: pkgBrand,
+            category: it.category,
+            cost: assignedUnitCost,
+            price: it.price,
+            stock: it.qty
+          };
+          createdProducts.push(prod);
+          state.products.push(prod);
+        });
+
+        // Registrar la compra del paquete si tuvo costo de inversión
+        let newPurchase = null;
+        if (pkgCost > 0) {
+          newPurchase = {
+            id: crypto.randomUUID(),
+            purchase_date: today(),
+            reference: `Paquete: ${pkgName}`,
+            product_id: createdProducts[0].id,
+            product_name: `${createdProducts.length} productos del paquete "${pkgName}"`,
+            quantity: rawItems.reduce((acc, r) => acc + r.qty, 0),
+            cost: pkgCost,
+            expenses: 0,
+            total: pkgCost
+          };
+          state.purchases = state.purchases || [];
+          state.purchases.push(newPurchase);
+        }
+
+        showToast(`Paquete "${pkgName}" guardado: ${createdProducts.length} productos ingresados al catálogo a precio de revista.`, '📦');
+
+        if (supabase) {
+          try {
+            await Promise.all([
+              supabase.from('products').insert(createdProducts),
+              newPurchase ? supabase.from('purchases').insert([newPurchase]) : Promise.resolve()
+            ]);
+          } catch (e) {
+            console.warn('Error al guardar paquete en Supabase:', e);
+          }
         }
       }
     }
@@ -1504,7 +1804,7 @@ function openEditProductModal(product) {
       </div>
 
       <div class="form-group">
-        <label>Precio de venta al público</label>
+        <label>Precio de venta al público (Precio revista)</label>
         <div class="input-addon-wrap">
           <span class="prefix">$</span>
           <input name="price" id="edit-price-input" type="number" step="0.01" min="0" value="${product.price}" required />
@@ -1641,7 +1941,67 @@ function openCustomerModal() {
 }
 
 // -------------------------------------------------------------
-// MODAL 6: REGISTRAR ABONO / PAGO
+// MODAL 6: EDITAR CLIENTE (NUEVO)
+// -------------------------------------------------------------
+function openEditCustomerModal(customer) {
+  const formHtml = `
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Nombre completo</label>
+        <input name="name" value="${customer.name}" required />
+      </div>
+
+      <div class="form-group">
+        <label>Teléfono / WhatsApp</label>
+        <input name="phone" value="${customer.phone || ''}" placeholder="Ej. 55 1234 5678" />
+      </div>
+
+      <div class="form-group">
+        <label>Saldo pendiente por cobrar</label>
+        <div class="input-addon-wrap">
+          <span class="prefix">$</span>
+          <input name="balance" type="number" step="0.01" min="0" value="${customer.balance || 0}" required />
+        </div>
+      </div>
+
+      <div class="form-group full">
+        <label>Notas / Referencia</label>
+        <input name="note" value="${customer.note || ''}" placeholder="Ej. Vecina casa azul, Colonia..." />
+      </div>
+    </div>
+  `;
+
+  showModal({
+    icon: '✏️',
+    title: `Editar a ${customer.name}`,
+    subtitle: 'Modifica los datos de contacto, notas o ajusta su saldo pendiente.',
+    formHtml,
+    onSubmit: async formData => {
+      customer.name = formData.get('name').trim();
+      customer.phone = formData.get('phone').trim();
+      customer.balance = Number(formData.get('balance')) || 0;
+      customer.note = formData.get('note').trim();
+
+      showToast(`Cliente "${customer.name}" actualizado`);
+
+      if (supabase) {
+        try {
+          await supabase.from('customers').update({
+            name: customer.name,
+            phone: customer.phone,
+            balance: customer.balance,
+            note: customer.note
+          }).eq('id', customer.id);
+        } catch (e) {
+          console.warn('Error actualizando cliente en Supabase:', e);
+        }
+      }
+    }
+  });
+}
+
+// -------------------------------------------------------------
+// MODAL 7: REGISTRAR ABONO / PAGO
 // -------------------------------------------------------------
 function openPaymentModal(customer) {
   const formHtml = `
