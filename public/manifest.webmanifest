@@ -1,0 +1,62 @@
+{
+  "name": "Impulso - Gestión de Negocio",
+  "short_name": "Impulso",
+  "description": "Sistema de gestión de inventario, ventas y cobranza para mamá",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "window-controls-overlay"],
+  "background_color": "#17231f",
+  "theme_color": "#17231f",
+  "lang": "es-MX",
+  "orientation": "portrait-primary",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Registrar Venta",
+      "short_name": "Venta",
+      "description": "Registrar una nueva venta",
+      "url": "/#sale",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Cobranza de Clientes",
+      "short_name": "Clientes",
+      "description": "Consultar deudas y cobrar a clientes",
+      "url": "/#customers",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Ver Inventario",
+      "short_name": "Inventario",
+      "description": "Consultar catálogo y existencias",
+      "url": "/#products",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
+

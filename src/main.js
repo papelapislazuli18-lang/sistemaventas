@@ -2,30 +2,28 @@ import { createClient } from '@supabase/supabase-js';
 import './style.css';
 
 // -------------------------------------------------------------
-// SUPABASE CLIENT SETUP (SIEMPRE CONECTADO A LA NUBE Y ROBUSTO)
+// SUPABASE CLIENT SETUP (DEFENSIVE & PRODUCTION READY)
 // -------------------------------------------------------------
-const DEFAULT_SUPABASE_URL = 'https://mppsqiofllegyhdojybm.supabase.co';
-const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1wcHNxaW9mbGxlZ3loZG9qeWJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyNDU2MDgsImV4cCI6MjEwNjgyMTYwOH0.yvpthk1Yyk2mp6p3hO4akafZPbIVooPnrw7fkpH253g';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const envUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
-const rawUrl = (envUrl && envUrl.startsWith('https://') && !envUrl.includes('tu-proyecto'))
-  ? envUrl
-  : DEFAULT_SUPABASE_URL;
-
-const supabaseUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
-const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
-const supabaseKey = (envKey && !envKey.includes('tu-clave'))
-  ? envKey
-  : DEFAULT_SUPABASE_KEY;
+const isSupabaseConfigured = Boolean(
+  supabaseUrl &&
+  supabaseKey &&
+  typeof supabaseUrl === 'string' &&
+  supabaseUrl.startsWith('https://') &&
+  !supabaseUrl.includes('tu-proyecto') &&
+  !supabaseKey.includes('tu-clave')
+);
 
 let supabase = null;
-let isConnectedToSupabase = false;
-
-try {
-  supabase = createClient(supabaseUrl, supabaseKey);
-} catch (e) {
-  console.warn('Error inicializando Supabase:', e);
-  supabase = null;
+if (isSupabaseConfigured) {
+  try {
+    supabase = createClient(supabaseUrl, supabaseKey);
+  } catch (e) {
+    console.warn('Error inicializando Supabase, usando modo local:', e);
+    supabase = null;
+  }
 }
 
 // -------------------------------------------------------------
@@ -44,7 +42,7 @@ const initialData = {
     { id: 'c3', name: 'Patricia Ríos', phone: '55 3001 1122', note: 'Familia', balance: 390 }
   ],
   purchases: [
-    { id: 'b1', purchase_date: '2026-10-01', reference: 'Campaña 14 L\'Bel', product_id: 'p1', product_name: 'Set de brochas Glow', quantity: 4, cost: 180, expenses: 50, total: 770 },
+    { id: 'b1', purchase_date: '2026-10-01', reference: "Campaña 14 L'Bel", product_id: 'p1', product_name: 'Set de brochas Glow', quantity: 4, cost: 180, expenses: 50, total: 770 },
     { id: 'b2', purchase_date: '2026-10-03', reference: 'Pedido Betterware', product_id: 'p2', product_name: 'Organizador multiuso', quantity: 3, cost: 125, expenses: 0, total: 375 }
   ],
   sales: [
@@ -71,6 +69,58 @@ try {
 let view = 'summary'; // 'summary' | 'products' | 'purchases' | 'sales' | 'customers'
 let productSearchQuery = '';
 let productBrandFilter = '';
+
+// View preferences (Cards vs Table)
+const viewModes = {
+  products: 'auto', // 'auto' | 'cards' | 'table'
+  sales: 'auto',
+  purchases: 'auto',
+  customers: 'auto'
+};
+
+function isCardsMode(viewKey) {
+  const m = viewModes[viewKey];
+  if (m === 'cards') return true;
+  if (m === 'table') return false;
+  return window.innerWidth <= 840;
+}
+
+// PWA deferred prompt
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  renderApp();
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredPrompt = null;
+  showToast('¡Impulso se instaló como aplicación!', '📱');
+  renderApp();
+});
+
+// Network status listeners
+window.addEventListener('online', () => {
+  showToast('Conexión a internet restablecida', '🟢');
+  if (supabase) initSupabaseData();
+  renderApp();
+});
+
+window.addEventListener('offline', () => {
+  showToast('Sin internet. Trabajando en modo local.', '⚠️');
+  renderApp();
+});
+
+// Service Worker Registration for PWA & Offline
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      console.log('Impulso PWA SW listo:', reg.scope);
+    }).catch(err => {
+      console.warn('SW advertencia:', err);
+    });
+  });
+}
 
 // Helper formatters
 const money = value => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(value || 0);
@@ -103,9 +153,7 @@ function showToast(message, icon = '✅') {
 // -------------------------------------------------------------
 // SUPABASE SYNC LAYER
 // -------------------------------------------------------------
-// SUPABASE SYNC LAYER (TIEMPO REAL Y SINCRONIZACIÓN ENTRE DISPOSITIVOS)
-// -------------------------------------------------------------
-async function initSupabaseData(notify = false) {
+async function initSupabaseData() {
   if (!supabase) return;
   try {
     const [pRes, cRes, puRes, sRes] = await Promise.all([
@@ -120,119 +168,72 @@ async function initSupabaseData(notify = false) {
       return;
     }
 
-    isConnectedToSupabase = true;
-
-    // Rescatar y subir datos locales que el usuario haya creado sin internet/conexión previa
-    const remoteProductIds = new Set((pRes.data || []).map(p => p.id));
-    const unsyncedProducts = (state.products || []).filter(p => !remoteProductIds.has(p.id) && !['p1','p2','p3','p4'].includes(p.id));
-    if (unsyncedProducts.length > 0) {
-      try {
-        await supabase.from('products').insert(unsyncedProducts);
-        const ref = await supabase.from('products').select('*').order('created_at', { ascending: false });
-        if (ref.data) pRes.data = ref.data;
-      } catch (e) {
-        console.warn('Error subiendo productos locales:', e);
-      }
+    let updated = false;
+    if (pRes.data && pRes.data.length > 0) {
+      state.products = pRes.data.map(p => ({
+        id: p.id,
+        name: p.name,
+        brand: p.brand || '',
+        category: p.category || '',
+        cost: Number(p.cost) || 0,
+        price: Number(p.price) || 0,
+        stock: Number(p.stock) || 0
+      }));
+      updated = true;
+    }
+    if (cRes.data && cRes.data.length > 0) {
+      state.customers = cRes.data.map(c => ({
+        id: c.id,
+        name: c.name,
+        phone: c.phone || '',
+        note: c.note || '',
+        balance: Number(c.balance) || 0
+      }));
+      updated = true;
+    }
+    if (puRes.data && puRes.data.length > 0) {
+      state.purchases = puRes.data.map(pu => ({
+        id: pu.id,
+        purchase_date: pu.purchase_date,
+        reference: pu.reference || '',
+        product_id: pu.product_id,
+        product_name: pu.product_name || '',
+        quantity: Number(pu.quantity) || 1,
+        cost: Number(pu.cost) || 0,
+        expenses: Number(pu.expenses) || 0,
+        total: Number(pu.total) || 0
+      }));
+      updated = true;
+    }
+    if (sRes.data && sRes.data.length > 0) {
+      state.sales = sRes.data.map(s => ({
+        id: s.id,
+        sale_date: s.sale_date,
+        customer_id: s.customer_id,
+        customer_name: s.customer_name || 'Venta directa',
+        product_id: s.product_id,
+        product_name: s.product_name || '',
+        quantity: Number(s.quantity) || 1,
+        unit_price: Number(s.unit_price) || 0,
+        unit_cost: Number(s.unit_cost) || 0,
+        total: Number(s.total) || 0,
+        profit: Number(s.profit) || 0,
+        paid: Number(s.paid) || 0,
+        status: s.status || 'Pagada',
+        due_date: s.due_date || ''
+      }));
+      updated = true;
     }
 
-    const remoteCustomerIds = new Set((cRes.data || []).map(c => c.id));
-    const unsyncedCustomers = (state.customers || []).filter(c => !remoteCustomerIds.has(c.id) && !['c1','c2','c3'].includes(c.id));
-    if (unsyncedCustomers.length > 0) {
-      try {
-        await supabase.from('customers').insert(unsyncedCustomers);
-        const ref = await supabase.from('customers').select('*').order('name', { ascending: true });
-        if (ref.data) cRes.data = ref.data;
-      } catch (e) {
-        console.warn('Error subiendo clientes locales:', e);
-      }
-    }
-
-    const remoteSaleIds = new Set((sRes.data || []).map(s => s.id));
-    const unsyncedSales = (state.sales || []).filter(s => !remoteSaleIds.has(s.id) && !['s1','s2','s3'].includes(s.id));
-    if (unsyncedSales.length > 0) {
-      try {
-        await supabase.from('sales').insert(unsyncedSales);
-        const ref = await supabase.from('sales').select('*').order('sale_date', { ascending: false });
-        if (ref.data) sRes.data = ref.data;
-      } catch (e) {
-        console.warn('Error subiendo ventas locales:', e);
-      }
-    }
-
-    const remotePurchaseIds = new Set((puRes.data || []).map(pu => pu.id));
-    const unsyncedPurchases = (state.purchases || []).filter(pu => !remotePurchaseIds.has(pu.id) && !['b1','b2'].includes(pu.id));
-    if (unsyncedPurchases.length > 0) {
-      try {
-        await supabase.from('purchases').insert(unsyncedPurchases);
-        const ref = await supabase.from('purchases').select('*').order('purchase_date', { ascending: false });
-        if (ref.data) puRes.data = ref.data;
-      } catch (e) {
-        console.warn('Error subiendo compras locales:', e);
-      }
-    }
-
-    // Actualizar estado con los datos reales en Supabase
-    state.products = (pRes.data || []).map(p => ({
-      id: p.id,
-      name: p.name,
-      brand: p.brand || '',
-      category: p.category || '',
-      cost: Number(p.cost) || 0,
-      price: Number(p.price) || 0,
-      stock: Number(p.stock) || 0
-    }));
-
-    state.customers = (cRes.data || []).map(c => ({
-      id: c.id,
-      name: c.name,
-      phone: c.phone || '',
-      note: c.note || '',
-      balance: Number(c.balance) || 0
-    }));
-
-    state.purchases = (puRes.data || []).map(pu => ({
-      id: pu.id,
-      purchase_date: pu.purchase_date,
-      reference: pu.reference || '',
-      product_id: pu.product_id,
-      product_name: pu.product_name || '',
-      quantity: Number(pu.quantity) || 1,
-      cost: Number(pu.cost) || 0,
-      expenses: Number(pu.expenses) || 0,
-      total: Number(pu.total) || 0
-    }));
-
-    state.sales = (sRes.data || []).map(s => ({
-      id: s.id,
-      sale_date: s.sale_date,
-      customer_id: s.customer_id,
-      customer_name: s.customer_name || 'Venta directa',
-      product_id: s.product_id,
-      product_name: s.product_name || '',
-      quantity: Number(s.quantity) || 1,
-      unit_price: Number(s.unit_price) || 0,
-      unit_cost: Number(s.unit_cost) || 0,
-      total: Number(s.total) || 0,
-      profit: Number(s.profit) || 0,
-      paid: Number(s.paid) || 0,
-      status: s.status || 'Pagada',
-      due_date: s.due_date || ''
-    }));
-
-    saveLocal();
-    renderApp();
-    if (notify) {
-      showToast('Datos sincronizados con la nube (Supabase)', '☁️');
+    if (updated) {
+      saveLocal();
+      renderApp();
+      showToast('Datos sincronizados con Supabase', '☁️');
     }
   } catch (err) {
     console.warn('Error al conectar con Supabase, usando respaldo local:', err);
   }
 }
-
-// Escuchar cuando el usuario regresa a la pestaña para sincronizar en tiempo real
-window.addEventListener('focus', () => {
-  if (supabase) initSupabaseData(false);
-});
 
 // -------------------------------------------------------------
 // APP RENDERING
@@ -241,40 +242,113 @@ function renderApp() {
   const appEl = document.querySelector('#app');
   if (!appEl) return;
 
+  const lowStockCount = (state.products || []).filter(p => (p.stock || 0) <= 2).length;
+  const pendingDebtsCount = (state.customers || []).filter(c => (c.balance || 0) > 0).length;
+
   appEl.innerHTML = `
     <div class="shell">
-      <aside>
+      <!-- Barra superior móvil (Fija en pantallas <= 920px) -->
+      <header class="mobile-topbar" id="mobile-topbar">
+        <div class="mobile-brand" data-view="summary">
+          <img src="/icons/icon.svg" alt="Impulso" class="mobile-logo" />
+          <div class="mobile-brand-text">
+            <span class="mobile-brand-name">Impulso</span>
+            <small class="mobile-brand-subtitle">Negocio de Mamá</small>
+          </div>
+        </div>
+        <div class="mobile-topbar-actions">
+          <button type="button" class="status-chip ${supabase ? 'online' : 'offline'}" id="topbar-status-chip" title="Ver estado del sistema y respaldos">
+            <span class="status-dot ${supabase ? 'online' : 'offline'}"></span>
+            <span>${supabase ? 'Nube' : 'Local'}</span>
+          </button>
+          <button type="button" class="btn-topbar-action" data-action="add-sale" title="Registrar venta rápida">
+            <span>+ Venta</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Sidebar Desktop (Oculto en móvil) -->
+      <aside class="desktop-sidebar">
         <div class="brand">
           <small>Tu negocio en orden</small>
           <h1>Impulso</h1>
         </div>
-        <nav>
-          ${navButton('summary', '📊 Resumen')}
-          ${navButton('products', '📦 Productos')}
-          ${navButton('sales', '🛍️ Ventas')}
-          ${navButton('purchases', '🚚 Compras')}
-          ${navButton('customers', '👥 Clientes')}
+        <nav class="desktop-nav">
+          ${navButton('summary', '📊', 'Resumen')}
+          ${navButton('products', '📦', 'Productos', lowStockCount)}
+          ${navButton('sales', '🛍️', 'Ventas')}
+          ${navButton('purchases', '🚚', 'Compras')}
+          ${navButton('customers', '👥', 'Clientes', pendingDebtsCount)}
         </nav>
-        <div class="connection ${isConnectedToSupabase ? 'online' : 'offline'}">
-          <div style="display: flex; align-items: center; justify-content: space-between;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span class="status-dot ${isConnectedToSupabase ? 'online' : 'offline'}"></span>
-              <strong>${isConnectedToSupabase ? 'Nube conectada' : 'Modo local'}</strong>
+
+        ${deferredPrompt ? `
+          <div class="sidebar-install-card">
+            <div class="sidebar-install-head">
+              <span class="sidebar-install-icon">📲</span>
+              <div class="sidebar-install-text">
+                <b>Instalar Impulso</b>
+                <small>Úsala como aplicación directa</small>
+              </div>
             </div>
+            <button type="button" class="btn btn-sm btn-primary" id="btn-install-sidebar">Instalar App</button>
           </div>
-          <small style="display: block; margin-top: 5px;">
-            ${isConnectedToSupabase
-              ? 'Tus datos se guardan y sincronizan en Supabase en tiempo real en todas tus computadoras.'
-              : 'Conectando con la base de datos...'}
+        ` : ''}
+
+        <div class="connection ${supabase ? 'online' : 'offline'}" id="sidebar-connection-box" title="Haz clic para ver detalles y respaldos">
+          <div>
+            <span class="status-dot ${supabase ? 'online' : 'offline'}"></span>
+            ${supabase ? 'Supabase conectado' : 'Modo local (Sin Supabase)'}
+          </div>
+          <small>
+            ${supabase
+              ? 'Tus datos están protegidos en la nube en tiempo real.'
+              : 'Los datos se guardan en este navegador. Toca aquí para respaldar.'}
           </small>
-          <button type="button" class="btn btn-sm btn-outline" id="btn-force-sync" style="margin-top: 10px; width: 100%; justify-content: center; font-size: 11.5px; padding: 6px 10px;">
-            🔄 Sincronizar datos
-          </button>
         </div>
       </aside>
+
+      <!-- Contenido Principal -->
       <main>
         ${renderContent()}
       </main>
+
+      <!-- Botón Flotante Móvil (FAB) para registrar ventas rápidas -->
+      <div class="mobile-fab-wrap">
+        <button type="button" class="mobile-fab" data-action="add-sale" title="Registrar venta rápida">
+          <span class="fab-icon">⚡</span>
+          <span>+ Venta</span>
+        </button>
+      </div>
+
+      <!-- Barra de Navegación Inferior Móvil (Fija abajo en móvil) -->
+      <nav class="mobile-bottom-nav">
+        <button type="button" class="nav-tab ${view === 'summary' ? 'active' : ''}" data-view="summary">
+          <span class="nav-tab-icon">📊</span>
+          <span class="nav-tab-label">Resumen</span>
+        </button>
+        <button type="button" class="nav-tab ${view === 'products' ? 'active' : ''}" data-view="products">
+          <span class="nav-tab-icon">
+            📦
+            ${lowStockCount > 0 ? `<span class="nav-badge orange">${lowStockCount}</span>` : ''}
+          </span>
+          <span class="nav-tab-label">Productos</span>
+        </button>
+        <button type="button" class="nav-tab ${view === 'sales' ? 'active' : ''}" data-view="sales">
+          <span class="nav-tab-icon">🛍️</span>
+          <span class="nav-tab-label">Ventas</span>
+        </button>
+        <button type="button" class="nav-tab ${view === 'purchases' ? 'active' : ''}" data-view="purchases">
+          <span class="nav-tab-icon">🚚</span>
+          <span class="nav-tab-label">Compras</span>
+        </button>
+        <button type="button" class="nav-tab ${view === 'customers' ? 'active' : ''}" data-view="customers">
+          <span class="nav-tab-icon">
+            👥
+            ${pendingDebtsCount > 0 ? `<span class="nav-badge red">${pendingDebtsCount}</span>` : ''}
+          </span>
+          <span class="nav-tab-label">Clientes</span>
+        </button>
+      </nav>
     </div>
   `;
 
@@ -282,6 +356,7 @@ function renderApp() {
   document.querySelectorAll('[data-view]').forEach(btn => {
     btn.addEventListener('click', () => {
       view = btn.dataset.view;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       renderApp();
     });
   });
@@ -292,16 +367,22 @@ function renderApp() {
   document.querySelectorAll('[data-action="add-product"]').forEach(b => b.addEventListener('click', openProductModal));
   document.querySelectorAll('[data-action="add-customer"]').forEach(b => b.addEventListener('click', openCustomerModal));
 
-  // Sync button listener
-  const syncBtn = document.getElementById('btn-force-sync');
-  if (syncBtn) {
-    syncBtn.addEventListener('click', () => {
-      syncBtn.disabled = true;
-      syncBtn.textContent = 'Sincronizando...';
-      initSupabaseData(true).finally(() => {
-        syncBtn.disabled = false;
-        syncBtn.textContent = '🔄 Sincronizar datos';
-      });
+  // Connection info and backup modal
+  const statusChips = document.querySelectorAll('#topbar-status-chip, #sidebar-connection-box');
+  statusChips.forEach(chip => {
+    chip.addEventListener('click', openSyncInfoModal);
+  });
+
+  const installSidebar = document.getElementById('btn-install-sidebar');
+  if (installSidebar && deferredPrompt) {
+    installSidebar.addEventListener('click', async () => {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        showToast('¡Instalando Impulso!', '🎉');
+      }
+      deferredPrompt = null;
+      renderApp();
     });
   }
 
@@ -309,8 +390,23 @@ function renderApp() {
   attachViewEvents();
 }
 
-function navButton(id, label) {
-  return `<button class="${view === id ? 'active' : ''}" data-view="${id}">${label}</button>`;
+function navButton(id, icon, label, badgeCount = 0) {
+  return `
+    <button type="button" class="${view === id ? 'active' : ''}" data-view="${id}">
+      <span>${icon} ${label}</span>
+      ${badgeCount > 0 ? `<span class="sidebar-badge ${id === 'products' ? 'orange' : ''}">${badgeCount}</span>` : ''}
+    </button>
+  `;
+}
+
+function renderViewSwitcher(viewKey) {
+  const active = isCardsMode(viewKey) ? 'cards' : 'table';
+  return `
+    <div class="view-switch-toggle" data-viewkey="${viewKey}">
+      <button type="button" class="view-switch-btn ${active === 'cards' ? 'active' : ''}" data-mode="cards" title="Ver en tarjetas compactas">📱 Tarjetas</button>
+      <button type="button" class="view-switch-btn ${active === 'table' ? 'active' : ''}" data-mode="table" title="Ver en tabla completa">📄 Tabla</button>
+    </div>
+  `;
 }
 
 function renderContent() {
@@ -405,11 +501,11 @@ function renderSummaryView() {
           ${pendingDebts.length > 0
             ? pendingDebts.map(c => `
               <div class="list-row">
-                <div>
+                <div style="min-width: 0;">
                   <b>${c.name}</b>
                   <small>${c.phone ? '📱 ' + c.phone : 'Sin teléfono'} ${c.note ? '· ' + c.note : ''}</small>
                 </div>
-                <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px; flex-shrink: 0;">
                   <span class="amount orange">${money(c.balance)}</span>
                   <button class="btn btn-sm btn-secondary" data-abono-id="${c.id}">Abonar</button>
                 </div>
@@ -431,13 +527,13 @@ function renderSummaryView() {
             ${lowStock.length > 0
               ? lowStock.map(p => `
                 <div class="list-row">
-                  <div>
+                  <div style="min-width: 0;">
                     <b>${p.name}</b>
                     <small>${p.brand} · Costo compra: ${money(p.cost)}</small>
                   </div>
-                  <div style="display:flex; align-items:center; gap:8px;">
+                  <div style="display:flex; align-items:center; gap:8px; flex-shrink: 0;">
                     <span class="pill ${p.stock === 0 ? 'red' : 'orange'}">
-                      ${p.stock === 0 ? 'Agotado (0)' : p.stock + ' disponibles'}
+                      ${p.stock === 0 ? 'Agotado (0)' : p.stock + ' disp.'}
                     </span>
                     <button class="btn btn-sm btn-outline" data-surtir-id="${p.id}">Surtir</button>
                   </div>
@@ -457,11 +553,11 @@ function renderSummaryView() {
             ${recentSales.length > 0
               ? recentSales.map(s => `
                 <div class="list-row">
-                  <div>
+                  <div style="min-width: 0;">
                     <b>${s.product_name}</b>
                     <small>${s.customer_name} · ${s.quantity} pza(s) · ${s.sale_date}</small>
                   </div>
-                  <div style="text-align: right;">
+                  <div style="text-align: right; flex-shrink: 0;">
                     <b class="amount">${money(s.total)}</b>
                     <small style="color: var(--primary); font-weight: 700;">+${money(s.profit)} ganancia</small>
                   </div>
@@ -477,7 +573,7 @@ function renderSummaryView() {
 }
 
 // -------------------------------------------------------------
-// VIEW 2: PRODUCTS (TABLA CON COSTO DE COMPRA Y COSTO AL PÚBLICO)
+// VIEW 2: PRODUCTS
 // -------------------------------------------------------------
 function renderProductsView() {
   const brands = [...new Set((state.products || []).map(p => p.brand).filter(Boolean))];
@@ -507,15 +603,15 @@ function renderProductsView() {
       </div>
     </header>
 
-    <!-- Barra de búsqueda y filtros -->
+    <!-- Barra de búsqueda, filtros y selector de vista -->
     <div class="toolbar">
       <div class="filters">
         <input
           id="product-search-input"
           type="text"
-          placeholder="🔍 Buscar por producto, marca o categoría..."
+          placeholder="🔍 Buscar producto, marca o categoría..."
           value="${productSearchQuery}"
-          style="min-width: 280px;"
+          style="min-width: 260px;"
         />
         <select id="product-brand-filter">
           <option value="">Todas las marcas (${brands.length})</option>
@@ -523,79 +619,140 @@ function renderProductsView() {
         </select>
         ${(productSearchQuery || productBrandFilter) ? `<button class="btn btn-sm btn-outline" id="clear-product-filters">Limpiar filtros</button>` : ''}
       </div>
-      <small class="subtle">Mostrando <b>${filtered.length}</b> de ${(state.products || []).length} productos</small>
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+        ${renderViewSwitcher('products')}
+        <small class="subtle"><b>${filtered.length}</b> de ${(state.products || []).length} productos</small>
+      </div>
     </div>
 
-    <!-- Tabla de productos con Costo de compra y Precio al público -->
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Producto</th>
-            <th>Marca</th>
-            <th>Categoría</th>
-            <th>Costo de compra</th>
-            <th>Precio al público</th>
-            <th>Ganancia x pieza</th>
-            <th>Existencia</th>
-            <th style="text-align: right;">Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${filtered.length > 0
-            ? filtered.map(p => {
-              const unitProfit = p.price - p.cost;
-              const marginPct = p.price > 0 ? Math.round((unitProfit / p.price) * 100) : 0;
-              const isLowStock = p.stock <= 2;
-              const isOutOfStock = p.stock === 0;
+    <!-- Contenido: Tarjetas o Tabla según preferencia / tamaño de pantalla -->
+    ${isCardsMode('products')
+      ? renderProductsCards(filtered)
+      : `
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th>Marca</th>
+                <th>Categoría</th>
+                <th>Costo de compra</th>
+                <th>Precio al público</th>
+                <th>Ganancia x pieza</th>
+                <th>Existencia</th>
+                <th style="text-align: right;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filtered.length > 0
+                ? filtered.map(p => {
+                  const unitProfit = p.price - p.cost;
+                  const marginPct = p.price > 0 ? Math.round((unitProfit / p.price) * 100) : 0;
+                  const isLowStock = p.stock <= 2;
+                  const isOutOfStock = p.stock === 0;
 
-              return `
-                <tr>
-                  <td>
-                    <b>${p.name}</b>
-                  </td>
-                  <td><span class="pill blue">${p.brand || 'General'}</span></td>
-                  <td>${p.category || 'Sin categoría'}</td>
-                  <td>
-                    <span class="cost-tag" title="Lo que te costó adquirirlo">${money(p.cost)}</span>
-                  </td>
-                  <td>
-                    <span class="price-tag" title="Precio de venta al cliente">${money(p.price)}</span>
-                  </td>
-                  <td>
-                    <span class="profit-badge" title="Ganancia neta por cada unidad vendida">
-                      +${money(unitProfit)} <small>(${marginPct}%)</small>
-                    </span>
-                  </td>
-                  <td>
-                    <span class="pill ${isOutOfStock ? 'red' : isLowStock ? 'orange' : ''}">
-                      ${isOutOfStock ? 'Agotado (0)' : `${p.stock} pza${p.stock === 1 ? '' : 's'}`}
-                    </span>
-                  </td>
-                  <td>
-                    <div class="actions-cell">
-                      <button class="btn btn-sm btn-outline" data-edit-product="${p.id}" title="Editar producto">✏️ Editar</button>
-                      <button class="btn btn-sm btn-danger" data-delete-product="${p.id}" title="Eliminar producto">🗑️</button>
-                    </div>
-                  </td>
-                </tr>
-              `;
-            }).join('')
-            : `<tr><td colspan="8" class="empty">No se encontraron productos con los filtros seleccionados.</td></tr>`
-          }
-        </tbody>
-      </table>
-    </div>
+                  return `
+                    <tr>
+                      <td><b>${p.name}</b></td>
+                      <td><span class="pill blue">${p.brand || 'General'}</span></td>
+                      <td>${p.category || 'Sin categoría'}</td>
+                      <td>
+                        <span class="cost-tag" title="Lo que te costó adquirirlo">${money(p.cost)}</span>
+                      </td>
+                      <td>
+                        <span class="price-tag" title="Precio de venta al cliente">${money(p.price)}</span>
+                      </td>
+                      <td>
+                        <span class="profit-badge" title="Ganancia neta por cada unidad vendida">
+                          +${money(unitProfit)} <small>(${marginPct}%)</small>
+                        </span>
+                      </td>
+                      <td>
+                        <span class="pill ${isOutOfStock ? 'red' : isLowStock ? 'orange' : ''}">
+                          ${isOutOfStock ? 'Agotado (0)' : `${p.stock} pza${p.stock === 1 ? '' : 's'}`}
+                        </span>
+                      </td>
+                      <td>
+                        <div class="actions-cell">
+                          <button class="btn btn-sm btn-outline" data-edit-product="${p.id}" title="Editar producto">✏️ Editar</button>
+                          <button class="btn btn-sm btn-danger" data-delete-product="${p.id}" title="Eliminar producto">🗑️</button>
+                        </div>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')
+                : `<tr><td colspan="8" class="empty">No se encontraron productos con los filtros seleccionados.</td></tr>`
+              }
+            </tbody>
+          </table>
+        </div>
+      `
+    }
 
     <div style="margin-top: 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; background: #fffdf9; padding: 14px 20px; border-radius: 12px; border: 1px solid var(--line);">
       <small style="color: var(--muted); font-size: 13px;">
-        💡 <b>Resumen del inventario:</b> Tienes <b>${(state.products || []).reduce((acc, p) => acc + p.stock, 0)}</b> piezas en stock.
+        💡 <b>Resumen de inventario:</b> <b>${(state.products || []).reduce((acc, p) => acc + p.stock, 0)}</b> piezas en existencia.
       </small>
-      <div style="display: flex; gap: 20px; font-size: 13px;">
-        <span>Inversión en mercancía: <b>${money(totalCatalogCost)}</b></span>
+      <div style="display: flex; gap: 16px; font-size: 13px; flex-wrap: wrap;">
+        <span>Inversión: <b>${money(totalCatalogCost)}</b></span>
         <span>Venta potencial: <b>${money(totalCatalogRetail)}</b></span>
         <span style="color: var(--primary); font-weight: 700;">Ganancia potencial: +${money(potentialProfit)}</span>
       </div>
+    </div>
+  `;
+}
+
+function renderProductsCards(productsList) {
+  if (!productsList || productsList.length === 0) {
+    return `<div class="empty">No se encontraron productos con los filtros seleccionados.</div>`;
+  }
+
+  return `
+    <div class="cards-grid">
+      ${productsList.map(p => {
+        const unitProfit = p.price - p.cost;
+        const marginPct = p.price > 0 ? Math.round((unitProfit / p.price) * 100) : 0;
+        const isLowStock = p.stock <= 2;
+        const isOutOfStock = p.stock === 0;
+
+        return `
+          <div class="item-card">
+            <div class="item-card-head">
+              <div>
+                <div class="item-card-pills">
+                  <span class="pill blue">${p.brand || 'General'}</span>
+                  ${p.category ? `<span class="pill" style="background:#efebe2; color:#5c6b63;">${p.category}</span>` : ''}
+                </div>
+                <h4 class="item-card-title">${p.name}</h4>
+              </div>
+              <span class="pill ${isOutOfStock ? 'red' : isLowStock ? 'orange' : ''}">
+                ${isOutOfStock ? 'Agotado (0)' : `${p.stock} pza${p.stock === 1 ? '' : 's'}`}
+              </span>
+            </div>
+
+            <div class="item-card-metrics">
+              <div class="metric-mini">
+                <small>Costo compra</small>
+                <span class="cost-tag">${money(p.cost)}</span>
+              </div>
+              <div class="metric-mini">
+                <small>Precio público</small>
+                <span class="price-tag">${money(p.price)}</span>
+              </div>
+              <div class="metric-mini">
+                <small>Tu ganancia</small>
+                <span class="profit-badge">+${money(unitProfit)} <small>(${marginPct}%)</small></span>
+              </div>
+            </div>
+
+            <div class="item-card-actions">
+              <button class="btn btn-sm btn-secondary" data-surtir-id="${p.id}" title="Surtir más piezas">🚚 Surtir</button>
+              <button class="btn btn-sm btn-outline" data-edit-product="${p.id}" title="Editar producto">✏️ Editar</button>
+              <button class="btn btn-sm btn-danger" data-delete-product="${p.id}" title="Eliminar producto">🗑️</button>
+            </div>
+          </div>
+        `;
+      }).join('')}
     </div>
   `;
 }
@@ -616,47 +773,104 @@ function renderSalesView() {
       </div>
     </header>
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>Cliente</th>
-            <th>Producto</th>
-            <th>Cantidad</th>
-            <th>Total venta</th>
-            <th>Ganancia</th>
-            <th>Estado de pago</th>
-            <th style="text-align: right;">Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${(state.sales || []).length > 0
-            ? state.sales.slice().reverse().map(s => `
+    <div class="toolbar">
+      <div style="font-size: 13.5px; color: var(--muted); font-weight: 600;">
+        Total de ventas registradas: <b>${(state.sales || []).length}</b>
+      </div>
+      <div>
+        ${renderViewSwitcher('sales')}
+      </div>
+    </div>
+
+    ${isCardsMode('sales')
+      ? renderSalesCards(state.sales || [])
+      : `
+        <div class="table-wrap">
+          <table>
+            <thead>
               <tr>
-                <td>${s.sale_date}</td>
-                <td><b>${s.customer_name}</b></td>
-                <td>${s.product_name}</td>
-                <td><b>${s.quantity}</b> pza(s)</td>
-                <td><span class="price-tag">${money(s.total)}</span></td>
-                <td><span class="profit-badge">+${money(s.profit)}</span></td>
-                <td>
-                  <span class="pill ${s.status === 'Pagada' ? '' : s.status === 'Abono' ? 'orange' : 'red'}">
-                    ${s.status} ${s.paid < s.total ? `(Resta ${money(s.total - s.paid)})` : ''}
-                  </span>
-                </td>
-                <td>
-                  <div class="actions-cell">
-                    <button class="btn btn-sm btn-outline" data-edit-sale="${s.id}" title="Editar venta">✏️ Editar</button>
-                    <button class="btn btn-sm btn-danger" data-delete-sale="${s.id}" title="Eliminar registro de venta">🗑️</button>
-                  </div>
-                </td>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Producto</th>
+                <th>Cantidad</th>
+                <th>Total venta</th>
+                <th>Ganancia</th>
+                <th>Estado de pago</th>
+                <th style="text-align: right;">Acciones</th>
               </tr>
-            `).join('')
-            : `<tr><td colspan="8" class="empty">Aún no hay ventas registradas. ¡Haz click en "+ Registrar venta" para comenzar!</td></tr>`
-          }
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              ${(state.sales || []).length > 0
+                ? state.sales.slice().reverse().map(s => `
+                  <tr>
+                    <td><span class="date-chip">📅 ${s.sale_date}</span></td>
+                    <td><b>${s.customer_name}</b></td>
+                    <td>${s.product_name}</td>
+                    <td><b>${s.quantity}</b> pza(s)</td>
+                    <td><span class="price-tag">${money(s.total)}</span></td>
+                    <td><span class="profit-badge">+${money(s.profit)}</span></td>
+                    <td>
+                      <span class="pill ${s.status === 'Pagada' ? '' : s.status === 'Abono' ? 'orange' : 'red'}">
+                        ${s.status} ${s.paid < s.total ? `(Resta ${money(s.total - s.paid)})` : ''}
+                      </span>
+                    </td>
+                    <td>
+                      <div class="actions-cell">
+                        <button class="btn btn-sm btn-danger" data-delete-sale="${s.id}" title="Eliminar registro de venta">🗑️</button>
+                      </div>
+                    </td>
+                  </tr>
+                `).join('')
+                : `<tr><td colspan="8" class="empty">Aún no hay ventas registradas. ¡Haz click en "+ Registrar venta" para comenzar!</td></tr>`
+              }
+            </tbody>
+          </table>
+        </div>
+      `
+    }
+  `;
+}
+
+function renderSalesCards(salesList) {
+  if (!salesList || salesList.length === 0) {
+    return `<div class="empty">Aún no hay ventas registradas. ¡Haz click en "+ Registrar venta" para comenzar!</div>`;
+  }
+
+  return `
+    <div class="cards-grid">
+      ${salesList.slice().reverse().map(s => `
+        <div class="item-card">
+          <div class="item-card-head">
+            <div>
+              <span class="date-chip">📅 ${s.sale_date}</span>
+              <h4 class="item-card-title" style="margin-top: 6px;">👤 ${s.customer_name}</h4>
+            </div>
+            <span class="pill ${s.status === 'Pagada' ? '' : s.status === 'Abono' ? 'orange' : 'red'}">
+              ${s.status} ${s.paid < s.total ? `(Resta ${money(s.total - s.paid)})` : ''}
+            </span>
+          </div>
+
+          <div class="item-card-body">
+            <div style="font-size: 14px;">
+              📦 <b>${s.product_name}</b> · <span class="pill" style="font-size: 11px; padding: 2px 7px;">${s.quantity} pza${s.quantity === 1 ? '' : 's'}</span>
+            </div>
+            <div class="item-card-metrics" style="grid-template-columns: 1fr 1fr;">
+              <div class="metric-mini">
+                <small>Total venta</small>
+                <span class="price-tag">${money(s.total)}</span>
+              </div>
+              <div class="metric-mini">
+                <small>Ganancia neta</small>
+                <span class="profit-badge">+${money(s.profit)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="item-card-actions">
+            <button class="btn btn-sm btn-danger" data-delete-sale="${s.id}" title="Eliminar registro">🗑️ Eliminar</button>
+          </div>
+        </div>
+      `).join('')}
     </div>
   `;
 }
@@ -677,43 +891,98 @@ function renderPurchasesView() {
       </div>
     </header>
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>Referencia / Pedido</th>
-            <th>Producto abastecido</th>
-            <th>Cantidad</th>
-            <th>Costo unitario</th>
-            <th>Envío / Gastos</th>
-            <th>Total compra</th>
-            <th style="text-align: right;">Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${(state.purchases || []).length > 0
-            ? state.purchases.slice().reverse().map(p => `
+    <div class="toolbar">
+      <div style="font-size: 13.5px; color: var(--muted); font-weight: 600;">
+        Total de compras registradas: <b>${(state.purchases || []).length}</b>
+      </div>
+      <div>
+        ${renderViewSwitcher('purchases')}
+      </div>
+    </div>
+
+    ${isCardsMode('purchases')
+      ? renderPurchasesCards(state.purchases || [])
+      : `
+        <div class="table-wrap">
+          <table>
+            <thead>
               <tr>
-                <td>${p.purchase_date}</td>
-                <td><b>${p.reference || 'Sin referencia'}</b></td>
-                <td>${p.product_name}</td>
-                <td><b>${p.quantity}</b> pza(s)</td>
-                <td><span class="cost-tag">${money(p.cost)}</span></td>
-                <td>${p.expenses ? money(p.expenses) : '$0.00'}</td>
-                <td><span class="price-tag">${money(p.total)}</span></td>
-                <td>
-                  <div class="actions-cell">
-                    <button class="btn btn-sm btn-outline" data-edit-purchase="${p.id}" title="Editar compra">✏️ Editar</button>
-                    <button class="btn btn-sm btn-danger" data-delete-purchase="${p.id}" title="Eliminar registro de compra">🗑️</button>
-                  </div>
-                </td>
+                <th>Fecha</th>
+                <th>Referencia / Pedido</th>
+                <th>Producto abastecido</th>
+                <th>Cantidad</th>
+                <th>Costo unitario</th>
+                <th>Envío / Gastos</th>
+                <th>Total compra</th>
+                <th style="text-align: right;">Acciones</th>
               </tr>
-            `).join('')
-            : `<tr><td colspan="8" class="empty">Aún no hay compras registradas. Registra tus pedidos de catálogo para surtir existencias.</td></tr>`
-          }
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              ${(state.purchases || []).length > 0
+                ? state.purchases.slice().reverse().map(p => `
+                  <tr>
+                    <td><span class="date-chip">📅 ${p.purchase_date}</span></td>
+                    <td><b>${p.reference || 'Sin referencia'}</b></td>
+                    <td>${p.product_name}</td>
+                    <td><b>${p.quantity}</b> pza(s)</td>
+                    <td><span class="cost-tag">${money(p.cost)}</span></td>
+                    <td>${p.expenses ? money(p.expenses) : '$0.00'}</td>
+                    <td><span class="price-tag">${money(p.total)}</span></td>
+                    <td>
+                      <div class="actions-cell">
+                        <button class="btn btn-sm btn-danger" data-delete-purchase="${p.id}" title="Eliminar registro de compra">🗑️</button>
+                      </div>
+                    </td>
+                  </tr>
+                `).join('')
+                : `<tr><td colspan="8" class="empty">Aún no hay compras registradas. Registra tus pedidos de catálogo para surtir existencias.</td></tr>`
+              }
+            </tbody>
+          </table>
+        </div>
+      `
+    }
+  `;
+}
+
+function renderPurchasesCards(purchasesList) {
+  if (!purchasesList || purchasesList.length === 0) {
+    return `<div class="empty">Aún no hay compras registradas. Registra tus pedidos de catálogo para surtir existencias.</div>`;
+  }
+
+  return `
+    <div class="cards-grid">
+      ${purchasesList.slice().reverse().map(p => `
+        <div class="item-card">
+          <div class="item-card-head">
+            <div>
+              <span class="date-chip">📅 ${p.purchase_date}</span>
+              <h4 class="item-card-title" style="margin-top: 6px;">🚚 ${p.reference || 'Compra / Pedido'}</h4>
+            </div>
+            <span class="price-tag">${money(p.total)}</span>
+          </div>
+
+          <div class="item-card-body">
+            <div style="font-size: 14px;">
+              📦 <b>${p.product_name}</b> · <span class="pill" style="font-size: 11px; padding: 2px 7px;">${p.quantity} pza${p.quantity === 1 ? '' : 's'}</span>
+            </div>
+            <div class="item-card-metrics" style="grid-template-columns: 1fr 1fr;">
+              <div class="metric-mini">
+                <small>Costo unitario</small>
+                <span class="cost-tag">${money(p.cost)}</span>
+              </div>
+              <div class="metric-mini">
+                <small>Envío / Gastos</small>
+                <span style="font-weight: 600; color: var(--muted);">${p.expenses ? money(p.expenses) : '$0.00'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="item-card-actions">
+            <button class="btn btn-sm btn-danger" data-delete-purchase="${p.id}" title="Eliminar registro">🗑️ Eliminar</button>
+          </div>
+        </div>
+      `).join('')}
     </div>
   `;
 }
@@ -734,50 +1003,109 @@ function renderCustomersView() {
       </div>
     </header>
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Nombre del cliente</th>
-            <th>Contacto</th>
-            <th>Referencia / Notas</th>
-            <th>Saldo pendiente</th>
-            <th style="text-align: right;">Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${(state.customers || []).length > 0
-            ? state.customers.map(c => `
+    <div class="toolbar">
+      <div style="font-size: 13.5px; color: var(--muted); font-weight: 600;">
+        Total de clientes registrados: <b>${(state.customers || []).length}</b>
+      </div>
+      <div>
+        ${renderViewSwitcher('customers')}
+      </div>
+    </div>
+
+    ${isCardsMode('customers')
+      ? renderCustomersCards(state.customers || [])
+      : `
+        <div class="table-wrap">
+          <table>
+            <thead>
               <tr>
-                <td><b>${c.name}</b></td>
-                <td>
-                  ${c.phone
-                    ? `<a href="https://wa.me/52${c.phone.replace(/\D/g, '')}" target="_blank" rel="noopener" style="color: var(--primary); text-decoration: none; font-weight: 600;">📱 ${c.phone}</a>`
-                    : '<span style="color: var(--muted);">Sin teléfono</span>'
-                  }
-                </td>
-                <td>${c.note || '<span style="color: var(--muted);">-</span>'}</td>
-                <td>
-                  <span class="amount ${c.balance > 0 ? 'orange' : 'green'}">
-                    ${c.balance > 0 ? `Por cobrar: ${money(c.balance)}` : '✅ Al corriente'}
-                  </span>
-                </td>
-                <td>
-                  <div class="actions-cell">
-                    ${c.balance > 0
-                      ? `<button class="btn btn-sm btn-secondary" data-abono-id="${c.id}" title="Registrar pago o abono">💰 Abonar</button>`
-                      : ''
-                    }
-                    <button class="btn btn-sm btn-outline" data-edit-customer="${c.id}" title="Editar cliente">✏️ Editar</button>
-                    <button class="btn btn-sm btn-danger" data-delete-customer="${c.id}" title="Eliminar cliente">🗑️</button>
-                  </div>
-                </td>
+                <th>Nombre del cliente</th>
+                <th>Contacto</th>
+                <th>Referencia / Notas</th>
+                <th>Saldo pendiente</th>
+                <th style="text-align: right;">Acciones</th>
               </tr>
-            `).join('')
-            : `<tr><td colspan="5" class="empty">Aún no tienes clientes registrados.</td></tr>`
-          }
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              ${(state.customers || []).length > 0
+                ? state.customers.map(c => `
+                  <tr>
+                    <td><b>${c.name}</b></td>
+                    <td>
+                      ${c.phone
+                        ? `<a href="https://wa.me/52${c.phone.replace(/\D/g, '')}" target="_blank" rel="noopener" class="btn btn-sm btn-whatsapp">
+                            💬 WhatsApp
+                          </a>`
+                        : '<span style="color: var(--muted);">Sin teléfono</span>'
+                      }
+                    </td>
+                    <td>${c.note || '<span style="color: var(--muted);">-</span>'}</td>
+                    <td>
+                      <span class="amount ${c.balance > 0 ? 'orange' : 'green'}">
+                        ${c.balance > 0 ? `Por cobrar: ${money(c.balance)}` : '✅ Al corriente'}
+                      </span>
+                    </td>
+                    <td>
+                      <div class="actions-cell">
+                        ${c.balance > 0
+                          ? `<button class="btn btn-sm btn-secondary" data-abono-id="${c.id}" title="Registrar pago o abono">💰 Abonar</button>`
+                          : ''
+                        }
+                        <button class="btn btn-sm btn-outline" data-edit-customer="${c.id}" title="Editar cliente">✏️ Editar</button>
+                        <button class="btn btn-sm btn-danger" data-delete-customer="${c.id}" title="Eliminar cliente">🗑️</button>
+                      </div>
+                    </td>
+                  </tr>
+                `).join('')
+                : `<tr><td colspan="5" class="empty">Aún no tienes clientes registrados.</td></tr>`
+              }
+            </tbody>
+          </table>
+        </div>
+      `
+    }
+  `;
+}
+
+function renderCustomersCards(customersList) {
+  if (!customersList || customersList.length === 0) {
+    return `<div class="empty">Aún no tienes clientes registrados.</div>`;
+  }
+
+  return `
+    <div class="cards-grid">
+      ${customersList.map(c => `
+        <div class="item-card">
+          <div class="item-card-head">
+            <div>
+              <h4 class="item-card-title" style="font-size: 17px;">👤 ${c.name}</h4>
+              ${c.note ? `<p style="font-size: 12.5px; color: var(--muted); margin: 3px 0 0;">📝 ${c.note}</p>` : ''}
+            </div>
+            <span class="pill ${c.balance > 0 ? 'orange' : ''}">
+              ${c.balance > 0 ? `Por cobrar: ${money(c.balance)}` : '✅ Al corriente'}
+            </span>
+          </div>
+
+          <div class="item-card-actions" style="justify-content: space-between;">
+            <div>
+              ${c.phone
+                ? `<a href="https://wa.me/52${c.phone.replace(/\D/g, '')}" target="_blank" rel="noopener" class="btn btn-sm btn-whatsapp">
+                    💬 WhatsApp (${c.phone})
+                  </a>`
+                : '<span style="font-size: 12px; color: var(--muted);">Sin teléfono</span>'
+              }
+            </div>
+            <div style="display: flex; gap: 6px;">
+              ${c.balance > 0
+                ? `<button class="btn btn-sm btn-secondary" data-abono-id="${c.id}" title="Registrar abono">💰 Abonar</button>`
+                : ''
+              }
+              <button class="btn btn-sm btn-outline" data-edit-customer="${c.id}" title="Editar cliente">✏️ Editar</button>
+              <button class="btn btn-sm btn-danger" data-delete-customer="${c.id}" title="Eliminar cliente">🗑️</button>
+            </div>
+          </div>
+        </div>
+      `).join('')}
     </div>
   `;
 }
@@ -816,6 +1144,18 @@ function attachViewEvents() {
       renderApp();
     });
   }
+
+  // View switch buttons (Cards vs Table)
+  document.querySelectorAll('.view-switch-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const container = e.target.closest('.view-switch-toggle');
+      if (!container) return;
+      const key = container.dataset.viewkey;
+      const mode = btn.dataset.mode;
+      viewModes[key] = mode;
+      renderApp();
+    });
+  });
 
   // Edit / Delete Product
   document.querySelectorAll('[data-edit-product]').forEach(btn => {
@@ -891,89 +1231,40 @@ function attachViewEvents() {
     });
   });
 
-  // Edit Sale
-  document.querySelectorAll('[data-edit-sale]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const s = byId(state.sales, btn.dataset.editSale);
-      if (s) openEditSaleModal(s);
-    });
-  });
-
-  // Delete Sale (con restauración de inventario y saldo)
+  // Delete Sale
   document.querySelectorAll('[data-delete-sale]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.deleteSale;
-      const sale = byId(state.sales, id);
-      if (!sale) return;
-
-      if (confirm(`¿Eliminar la venta de "${sale.product_name}"? Se regresarán ${sale.quantity} piezas al inventario.`)) {
-        // Regresar piezas al inventario del producto
-        const product = byId(state.products, sale.product_id);
-        if (product) {
-          product.stock += sale.quantity;
-        }
-
-        // Si el cliente quedó a deber por esta venta, descontar la deuda del saldo
-        const customer = sale.customer_id ? byId(state.customers, sale.customer_id) : null;
-        const pending = Math.max(0, sale.total - sale.paid);
-        if (customer && pending > 0) {
-          customer.balance = Math.max(0, (customer.balance || 0) - pending);
-        }
-
+      if (confirm('¿Eliminar este registro de venta?')) {
         state.sales = state.sales.filter(item => item.id !== id);
         saveLocal();
         renderApp();
-        showToast('Venta eliminada y piezas devueltas al inventario');
-
+        showToast('Venta eliminada');
         if (supabase) {
           try {
-            await Promise.all([
-              supabase.from('sales').delete().eq('id', id),
-              product ? supabase.from('products').update({ stock: product.stock }).eq('id', product.id) : Promise.resolve(),
-              customer ? supabase.from('customers').update({ balance: customer.balance }).eq('id', customer.id) : Promise.resolve()
-            ]);
+            await supabase.from('sales').delete().eq('id', id);
           } catch (e) {
-            console.warn('Error eliminando venta en Supabase:', e);
+            console.warn(e);
           }
         }
       }
     });
   });
 
-  // Edit Purchase
-  document.querySelectorAll('[data-edit-purchase]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const p = byId(state.purchases, btn.dataset.editPurchase);
-      if (p) openEditPurchaseModal(p);
-    });
-  });
-
-  // Delete Purchase (con deducción de inventario)
+  // Delete Purchase
   document.querySelectorAll('[data-delete-purchase]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.deletePurchase;
-      const purchase = byId(state.purchases, id);
-      if (!purchase) return;
-
-      if (confirm(`¿Eliminar el registro de compra de "${purchase.product_name}"? Se descontarán ${purchase.quantity} piezas del inventario.`)) {
-        const product = byId(state.products, purchase.product_id);
-        if (product) {
-          product.stock = Math.max(0, product.stock - purchase.quantity);
-        }
-
+      if (confirm('¿Eliminar este registro de compra?')) {
         state.purchases = state.purchases.filter(item => item.id !== id);
         saveLocal();
         renderApp();
-        showToast('Compra eliminada e inventario ajustado');
-
+        showToast('Compra eliminada');
         if (supabase) {
           try {
-            await Promise.all([
-              supabase.from('purchases').delete().eq('id', id),
-              product ? supabase.from('products').update({ stock: product.stock }).eq('id', product.id) : Promise.resolve()
-            ]);
+            await supabase.from('purchases').delete().eq('id', id);
           } catch (e) {
-            console.warn('Error eliminando compra en Supabase:', e);
+            console.warn(e);
           }
         }
       }
@@ -982,7 +1273,7 @@ function attachViewEvents() {
 }
 
 // -------------------------------------------------------------
-// GENERIC MODAL CONTROLLER
+// GENERIC MODAL CONTROLLER (WITH BOTTOM SHEET SUPPORT ON MOBILE)
 // -------------------------------------------------------------
 function showModal({ icon, title, subtitle, formHtml, onOpen, onSubmit }) {
   const container = document.getElementById('modal-container');
@@ -991,6 +1282,7 @@ function showModal({ icon, title, subtitle, formHtml, onOpen, onSubmit }) {
   container.innerHTML = `
     <div class="modal-backdrop open" id="active-modal-backdrop">
       <div class="modal-card">
+        <div class="modal-drag-handle"></div>
         <div class="modal-header">
           <div class="modal-title-box">
             <span class="modal-icon">${icon}</span>
@@ -1105,14 +1397,14 @@ function openSaleModal() {
 
       <div class="form-group">
         <label>Cantidad (piezas)</label>
-        <input name="quantity" id="sale-quantity-input" type="number" min="1" value="1" required />
+        <input name="quantity" id="sale-quantity-input" type="number" inputmode="numeric" min="1" value="1" required />
       </div>
 
       <div class="form-group">
         <label>Precio unitario al público</label>
         <div class="input-addon-wrap">
           <span class="prefix">$</span>
-          <input name="unit_price" id="sale-price-input" type="number" step="0.01" min="0" required />
+          <input name="unit_price" id="sale-price-input" type="number" inputmode="decimal" step="0.01" min="0" required />
         </div>
       </div>
 
@@ -1120,7 +1412,7 @@ function openSaleModal() {
         <label>Pago recibido de inmediato</label>
         <div class="input-addon-wrap">
           <span class="prefix">$</span>
-          <input name="paid" id="sale-paid-input" type="number" step="0.01" min="0" required />
+          <input name="paid" id="sale-paid-input" type="number" inputmode="decimal" step="0.01" min="0" required />
         </div>
       </div>
 
@@ -1168,39 +1460,40 @@ function openSaleModal() {
 
         const qty = Number(qtyInput.value) || 1;
         const unitPrice = Number(priceInput.value) || prod.price;
+        const paid = Number(paidInput.value) || 0;
         const total = qty * unitPrice;
-        const costTotal = qty * prod.cost;
-        const profit = total - costTotal;
-        const paid = Number(paidInput.value);
+        const totalCost = qty * prod.cost;
+        const profit = total - totalCost;
+        const remaining = total - paid;
 
         const costEl = document.getElementById('sale-preview-cost');
         const totEl = document.getElementById('sale-preview-total');
         const profEl = document.getElementById('sale-preview-profit');
-        if (costEl) costEl.textContent = money(costTotal);
+        const statLab = document.getElementById('sale-preview-status-label');
+        const statVal = document.getElementById('sale-preview-status-val');
+
+        if (costEl) costEl.textContent = money(totalCost);
         if (totEl) totEl.textContent = money(total);
-        if (profEl) profEl.textContent = `+${money(profit)} (${total ? Math.round((profit / total) * 100) : 0}%)`;
+        if (profEl) profEl.textContent = `+${money(profit)} (${Math.round((profit / total) * 100 || 0)}% margen)`;
 
-        const statusVal = document.getElementById('sale-preview-status-val');
-        const statusLabel = document.getElementById('sale-preview-status-label');
-
-        if (statusVal && statusLabel) {
-          if (paid >= total) {
-            statusLabel.textContent = 'Estado de pago:';
-            statusVal.className = 'green';
-            statusVal.textContent = '✅ Pagada de contado';
+        if (statVal && statLab) {
+          if (remaining <= 0) {
+            statLab.textContent = 'Estado del pago:';
+            statVal.textContent = '✅ Pagada en su totalidad';
+            statVal.className = 'green';
           } else if (paid > 0) {
-            const debt = total - paid;
-            statusLabel.textContent = 'Queda a deber al cliente:';
-            statusVal.className = 'orange';
-            statusVal.textContent = `Abono de ${money(paid)} · Debe ${money(debt)}`;
+            statLab.textContent = 'Pago parcial (Abono):';
+            statVal.textContent = `Abonó ${money(paid)} · Debe ${money(remaining)}`;
+            statVal.className = 'orange';
           } else {
-            statusLabel.textContent = 'Total a crédito:';
-            statusVal.className = 'orange';
-            statusVal.textContent = `Pendiente por cobrar ${money(total)}`;
+            statLab.textContent = 'Venta a crédito:';
+            statVal.textContent = `Debe ${money(total)}`;
+            statVal.className = 'orange';
           }
         }
       };
 
+      // Set initial values from first selected product
       const initialProd = byId(state.products, prodSelect.value);
       if (initialProd) {
         priceInput.value = initialProd.price;
@@ -1211,7 +1504,7 @@ function openSaleModal() {
         const p = byId(state.products, prodSelect.value);
         if (p) {
           priceInput.value = p.price;
-          paidInput.value = (Number(qtyInput.value) || 1) * p.price;
+          paidInput.value = p.price * (Number(qtyInput.value) || 1);
           updateCalculations();
         }
       });
@@ -1219,16 +1512,12 @@ function openSaleModal() {
       qtyInput.addEventListener('input', () => {
         const p = byId(state.products, prodSelect.value);
         if (p) {
-          paidInput.value = (Number(qtyInput.value) || 1) * Number(priceInput.value);
+          paidInput.value = (Number(priceInput.value) || p.price) * (Number(qtyInput.value) || 1);
         }
         updateCalculations();
       });
 
-      priceInput.addEventListener('input', () => {
-        paidInput.value = (Number(qtyInput.value) || 1) * Number(priceInput.value);
-        updateCalculations();
-      });
-
+      priceInput.addEventListener('input', updateCalculations);
       paidInput.addEventListener('input', updateCalculations);
 
       updateCalculations();
@@ -1238,288 +1527,72 @@ function openSaleModal() {
       const product = byId(state.products, productId);
       if (!product) throw new Error('Producto no encontrado');
 
-      const quantity = Number(formData.get('quantity')) || 1;
+      const qty = Number(formData.get('quantity')) || 1;
+      if (product.stock < qty) {
+        throw new Error(`Existencia insuficiente. Solo quedan ${product.stock} piezas en almacén.`);
+      }
+
       const unitPrice = Number(formData.get('unit_price')) || product.price;
+      const total = qty * unitPrice;
+      const profit = total - (qty * product.cost);
       const paid = Number(formData.get('paid')) || 0;
-      const total = quantity * unitPrice;
-      const profit = (unitPrice - product.cost) * quantity;
-      const saleDate = formData.get('sale_date') || today();
-      const dueDate = formData.get('due_date') || '';
       const customerId = formData.get('customer_id');
 
-      let customerName = 'Venta al mostrador';
-      let customer = null;
-
-      if (customerId !== '__direct__') {
-        customer = byId(state.customers, customerId);
-        if (customer) customerName = customer.name;
-      }
-
-      // Descontar inventario
-      product.stock = Math.max(0, product.stock - quantity);
-
-      // Calcular estado y deuda
       let status = 'Pagada';
-      const debt = Math.max(0, total - paid);
-      if (debt > 0) {
-        status = paid > 0 ? 'Abono' : 'Pendiente';
-        if (customer) {
-          customer.balance = (customer.balance || 0) + debt;
-        }
+      if (paid <= 0) {
+        status = 'Pendiente';
+      } else if (paid < total) {
+        status = 'Abono';
       }
 
+      const customer = customerId !== '__direct__' ? byId(state.customers, customerId) : null;
+      const customerName = customer ? customer.name : 'Venta directa (Mostrador)';
+
+      // 1. Descontar inventario
+      product.stock -= qty;
+
+      // 2. Si quedó saldo a deber, sumarlo al cliente
+      const pendingDebt = Math.max(0, total - paid);
+      if (customer && pendingDebt > 0) {
+        customer.balance = (customer.balance || 0) + pendingDebt;
+      }
+
+      // 3. Crear registro de venta
       const newSale = {
         id: crypto.randomUUID(),
-        sale_date: saleDate,
+        sale_date: formData.get('sale_date') || today(),
         customer_id: customer ? customer.id : null,
         customer_name: customerName,
         product_id: product.id,
         product_name: product.name,
-        quantity,
+        quantity: qty,
         unit_price: unitPrice,
         unit_cost: product.cost,
         total,
         profit,
         paid,
         status,
-        due_date: dueDate
+        due_date: formData.get('due_date') || ''
       };
 
       state.sales = state.sales || [];
       state.sales.push(newSale);
-      showToast(`Venta de "${product.name}" registrada con éxito!`, '🛍️');
 
+      showToast(`Venta de "${product.name}" registrada con éxito`, '🛍️');
+
+      // 4. Sincronizar en Supabase si está disponible
       if (supabase) {
         try {
-          await Promise.all([
+          const promises = [
             supabase.from('sales').insert([newSale]),
-            supabase.from('products').update({ stock: product.stock }).eq('id', product.id),
-            customer ? supabase.from('customers').update({ balance: customer.balance }).eq('id', customer.id) : Promise.resolve()
-          ]);
+            supabase.from('products').update({ stock: product.stock }).eq('id', product.id)
+          ];
+          if (customer && pendingDebt > 0) {
+            promises.push(supabase.from('customers').update({ balance: customer.balance }).eq('id', customer.id));
+          }
+          await Promise.all(promises);
         } catch (e) {
           console.warn('Error al guardar venta en Supabase:', e);
-        }
-      }
-    }
-  });
-}
-
-// -------------------------------------------------------------
-// MODAL: EDITAR VENTA (CRUD COMPLETO)
-// -------------------------------------------------------------
-function openEditSaleModal(sale) {
-  const productOptions = (state.products || []).map(p =>
-    `<option value="${p.id}" ${p.id === sale.product_id ? 'selected' : ''}>
-      ${p.name} · Precio catálogo: ${money(p.price)} · Stock: ${p.stock}
-    </option>`
-  ).join('');
-
-  const customerOptions = (state.customers || []).map(c =>
-    `<option value="${c.id}" ${c.id === sale.customer_id ? 'selected' : ''}>
-      ${c.name} (Saldo: ${money(c.balance)})
-    </option>`
-  ).join('');
-
-  const formHtml = `
-    <div class="form-grid">
-      <div class="form-group">
-        <label>Fecha de venta</label>
-        <input name="sale_date" type="date" value="${sale.sale_date}" required />
-      </div>
-
-      <div class="form-group">
-        <label>Cliente</label>
-        <select name="customer_id" id="edit-sale-customer-select">
-          <option value="__direct__" ${!sale.customer_id ? 'selected' : ''}>-- Venta de contado / Mostrador --</option>
-          ${customerOptions}
-        </select>
-      </div>
-
-      <div class="form-group full">
-        <label>Producto vendido</label>
-        <select name="product_id" id="edit-sale-product-select" required>
-          ${productOptions}
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label>Cantidad (piezas)</label>
-        <input name="quantity" id="edit-sale-qty-input" type="number" min="1" value="${sale.quantity}" required onfocus="this.select()" />
-      </div>
-
-      <div class="form-group">
-        <label>Precio unitario pactado</label>
-        <div class="input-addon-wrap">
-          <span class="prefix">$</span>
-          <input name="unit_price" id="edit-sale-price-input" type="number" step="0.01" min="0" value="${sale.unit_price}" required onfocus="this.select()" />
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>Monto pagado / cobrado</label>
-        <div class="input-addon-wrap">
-          <span class="prefix">$</span>
-          <input name="paid" id="edit-sale-paid-input" type="number" step="0.01" min="0" value="${sale.paid}" required onfocus="this.select()" />
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>Fecha límite de pago (si queda saldo)</label>
-        <input name="due_date" type="date" value="${sale.due_date || ''}" />
-      </div>
-    </div>
-
-    <!-- Resumen dinámico -->
-    <div class="calc-preview">
-      <div class="calc-preview-row">
-        <span>Total de la venta:</span>
-        <strong id="edit-sale-total-val">${money(sale.total)}</strong>
-      </div>
-      <div class="calc-preview-row">
-        <span>Ganancia estimada:</span>
-        <strong class="green" id="edit-sale-profit-val">+${money(sale.profit)}</strong>
-      </div>
-      <div class="calc-preview-row highlight">
-        <span id="edit-sale-debt-label">${sale.paid < sale.total ? 'Saldo restante por cobrar:' : 'Estado:'}</span>
-        <strong id="edit-sale-debt-val" class="${sale.paid < sale.total ? 'orange' : 'green'}">
-          ${sale.paid < sale.total ? money(sale.total - sale.paid) : '¡Completamente pagada!'}
-        </strong>
-      </div>
-    </div>
-  `;
-
-  showModal({
-    icon: '✏️',
-    title: 'Editar venta',
-    subtitle: 'Modifica los datos de la venta, pagos recibidos o corrige cantidades.',
-    formHtml,
-    onOpen: form => {
-      const prodSelect = form.querySelector('#edit-sale-product-select');
-      const qtyInput = form.querySelector('#edit-sale-qty-input');
-      const priceInput = form.querySelector('#edit-sale-price-input');
-      const paidInput = form.querySelector('#edit-sale-paid-input');
-
-      const updateCalculations = () => {
-        const prod = byId(state.products, prodSelect.value);
-        const qty = Number(qtyInput.value) || 1;
-        const unitPrice = Number(priceInput.value) || 0;
-        const paid = Number(paidInput.value) || 0;
-        const unitCost = prod ? prod.cost : (sale.unit_cost || 0);
-
-        const total = qty * unitPrice;
-        const profit = (unitPrice - unitCost) * qty;
-        const debt = Math.max(0, total - paid);
-
-        const totEl = document.getElementById('edit-sale-total-val');
-        const profEl = document.getElementById('edit-sale-profit-val');
-        const debtEl = document.getElementById('edit-sale-debt-val');
-        const debtLbl = document.getElementById('edit-sale-debt-label');
-
-        if (totEl) totEl.textContent = money(total);
-        if (profEl) profEl.textContent = `+${money(profit)}`;
-        if (debtEl) {
-          debtEl.textContent = debt > 0 ? money(debt) : '¡Completamente pagada!';
-          debtEl.className = debt > 0 ? 'orange' : 'green';
-        }
-        if (debtLbl) debtLbl.textContent = debt > 0 ? 'Saldo restante por cobrar:' : 'Estado:';
-      };
-
-      prodSelect.addEventListener('change', () => {
-        const p = byId(state.products, prodSelect.value);
-        if (p) {
-          priceInput.value = p.price;
-          updateCalculations();
-        }
-      });
-
-      qtyInput.addEventListener('input', updateCalculations);
-      priceInput.addEventListener('input', updateCalculations);
-      paidInput.addEventListener('input', updateCalculations);
-    },
-    onSubmit: async formData => {
-      const newProductId = formData.get('product_id');
-      const newProduct = byId(state.products, newProductId);
-      if (!newProduct) throw new Error('Producto no encontrado');
-
-      const newQty = Number(formData.get('quantity')) || 1;
-      const newUnitPrice = Number(formData.get('unit_price')) || 0;
-      const newPaid = Number(formData.get('paid')) || 0;
-      const newTotal = newQty * newUnitPrice;
-      const newProfit = (newUnitPrice - newProduct.cost) * newQty;
-      const newSaleDate = formData.get('sale_date') || today();
-      const newDueDate = formData.get('due_date') || '';
-      const newCustomerId = formData.get('customer_id');
-
-      let newCustomerName = 'Venta al mostrador';
-      let newCustomer = null;
-      if (newCustomerId !== '__direct__') {
-        newCustomer = byId(state.customers, newCustomerId);
-        if (newCustomer) newCustomerName = newCustomer.name;
-      }
-
-      // Ajuste de inventario entre producto anterior y nuevo
-      const oldProduct = byId(state.products, sale.product_id);
-      const oldQty = sale.quantity;
-
-      if (oldProduct && oldProduct.id === newProduct.id) {
-        newProduct.stock += (oldQty - newQty);
-      } else {
-        if (oldProduct) oldProduct.stock += oldQty;
-        newProduct.stock = Math.max(0, newProduct.stock - newQty);
-      }
-
-      // Ajuste de saldos del cliente
-      const oldCustomer = sale.customer_id ? byId(state.customers, sale.customer_id) : null;
-      const oldDebt = Math.max(0, sale.total - sale.paid);
-      const newDebt = Math.max(0, newTotal - newPaid);
-
-      let newStatus = 'Pagada';
-      if (newDebt > 0) {
-        newStatus = newPaid > 0 ? 'Abono' : 'Pendiente';
-      }
-
-      if (oldCustomer && newCustomer && oldCustomer.id === newCustomer.id) {
-        newCustomer.balance = Math.max(0, (newCustomer.balance || 0) - oldDebt + newDebt);
-      } else {
-        if (oldCustomer) oldCustomer.balance = Math.max(0, (oldCustomer.balance || 0) - oldDebt);
-        if (newCustomer) newCustomer.balance = (newCustomer.balance || 0) + newDebt;
-      }
-
-      // Actualizar datos de la venta
-      sale.sale_date = newSaleDate;
-      sale.customer_id = newCustomer ? newCustomer.id : null;
-      sale.customer_name = newCustomerName;
-      sale.product_id = newProduct.id;
-      sale.product_name = newProduct.name;
-      sale.quantity = newQty;
-      sale.unit_price = newUnitPrice;
-      sale.unit_cost = newProduct.cost;
-      sale.total = newTotal;
-      sale.profit = newProfit;
-      sale.paid = newPaid;
-      sale.status = newStatus;
-      sale.due_date = newDueDate;
-
-      showToast('Venta actualizada');
-
-      if (supabase) {
-        try {
-          const updates = [
-            supabase.from('sales').update(sale).eq('id', sale.id),
-            supabase.from('products').update({ stock: newProduct.stock }).eq('id', newProduct.id)
-          ];
-          if (oldProduct && oldProduct.id !== newProduct.id) {
-            updates.push(supabase.from('products').update({ stock: oldProduct.stock }).eq('id', oldProduct.id));
-          }
-          if (newCustomer) {
-            updates.push(supabase.from('customers').update({ balance: newCustomer.balance }).eq('id', newCustomer.id));
-          }
-          if (oldCustomer && (!newCustomer || oldCustomer.id !== newCustomer.id)) {
-            updates.push(supabase.from('customers').update({ balance: oldCustomer.balance }).eq('id', oldCustomer.id));
-          }
-          await Promise.all(updates);
-        } catch (e) {
-          console.warn('Error al actualizar venta en Supabase:', e);
         }
       }
     }
@@ -1563,14 +1636,14 @@ function openPurchaseModal(preselectedProductId = null) {
 
       <div class="form-group">
         <label>Cantidad que ingresa (piezas)</label>
-        <input name="quantity" id="purchase-qty-input" type="number" min="1" value="1" required />
+        <input name="quantity" id="purchase-qty-input" type="number" inputmode="numeric" min="1" value="1" required />
       </div>
 
       <div class="form-group">
         <label>Costo unitario de compra</label>
         <div class="input-addon-wrap">
           <span class="prefix">$</span>
-          <input name="cost" id="purchase-cost-input" type="number" step="0.01" min="0" required />
+          <input name="cost" id="purchase-cost-input" type="number" inputmode="decimal" step="0.01" min="0" required />
         </div>
       </div>
 
@@ -1578,7 +1651,7 @@ function openPurchaseModal(preselectedProductId = null) {
         <label>Gastos adicionales / Envío</label>
         <div class="input-addon-wrap">
           <span class="prefix">$</span>
-          <input name="expenses" id="purchase-expenses-input" type="number" step="0.01" min="0" value="0" />
+          <input name="expenses" id="purchase-expenses-input" type="number" inputmode="decimal" step="0.01" min="0" value="0" />
         </div>
       </div>
 
@@ -1590,14 +1663,14 @@ function openPurchaseModal(preselectedProductId = null) {
       </div>
     </div>
 
-    <!-- Resumen dinámico -->
+    <!-- Resumen de inversión -->
     <div class="calc-preview">
       <div class="calc-preview-row">
         <span>Subtotal mercancía:</span>
         <strong id="purchase-subtotal-val">$0.00</strong>
       </div>
       <div class="calc-preview-row">
-        <span>Flete / Envío:</span>
+        <span>Envío / Gastos adicionales:</span>
         <strong id="purchase-expenses-val">$0.00</strong>
       </div>
       <div class="calc-preview-row highlight">
@@ -1693,164 +1766,20 @@ function openPurchaseModal(preselectedProductId = null) {
 
       state.purchases = state.purchases || [];
       state.purchases.push(newPurchase);
-      showToast(`Compra registrada. Ahora tienes ${product.stock} piezas de "${product.name}".`, '📦');
+
+      showToast(`Compra de ${quantity} pzas de "${product.name}" registrada`, '🚚');
 
       if (supabase) {
         try {
           await Promise.all([
             supabase.from('purchases').insert([newPurchase]),
-            supabase.from('products').update({ stock: product.stock, cost: product.cost }).eq('id', product.id)
+            supabase.from('products').update({
+              stock: product.stock,
+              ...(shouldUpdateCost ? { cost: product.cost } : {})
+            }).eq('id', product.id)
           ]);
         } catch (e) {
           console.warn('Error al guardar compra en Supabase:', e);
-        }
-      }
-    }
-  });
-}
-
-// -------------------------------------------------------------
-// MODAL: EDITAR COMPRA / SURTIDO (CRUD COMPLETO)
-// -------------------------------------------------------------
-function openEditPurchaseModal(purchase) {
-  const productOptions = (state.products || []).map(p =>
-    `<option value="${p.id}" ${p.id === purchase.product_id ? 'selected' : ''}>
-      ${p.name} · Costo actual: ${money(p.cost)} · Stock: ${p.stock}
-    </option>`
-  ).join('');
-
-  const formHtml = `
-    <div class="form-grid">
-      <div class="form-group">
-        <label>Fecha de compra</label>
-        <input name="purchase_date" type="date" value="${purchase.purchase_date}" required />
-      </div>
-
-      <div class="form-group">
-        <label>Referencia / Pedido</label>
-        <input name="reference" value="${purchase.reference || ''}" placeholder="Ej. Pedido catálogo Campaña 15" required />
-      </div>
-
-      <div class="form-group full">
-        <label>Producto abastecido</label>
-        <select name="product_id" id="edit-purchase-product-select" required>
-          ${productOptions}
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label>Cantidad ingresada (piezas)</label>
-        <input name="quantity" id="edit-purchase-qty-input" type="number" min="1" value="${purchase.quantity}" required onfocus="this.select()" />
-      </div>
-
-      <div class="form-group">
-        <label>Costo unitario de compra</label>
-        <div class="input-addon-wrap">
-          <span class="prefix">$</span>
-          <input name="cost" id="edit-purchase-cost-input" type="number" step="0.01" min="0" value="${purchase.cost}" required onfocus="this.select()" />
-        </div>
-      </div>
-
-      <div class="form-group full">
-        <label>Gastos adicionales / Envío</label>
-        <div class="input-addon-wrap">
-          <span class="prefix">$</span>
-          <input name="expenses" id="edit-purchase-expenses-input" type="number" step="0.01" min="0" value="${purchase.expenses || 0}" onfocus="this.select()" />
-        </div>
-      </div>
-    </div>
-
-    <!-- Resumen dinámico -->
-    <div class="calc-preview">
-      <div class="calc-preview-row">
-        <span>Subtotal mercancía:</span>
-        <strong id="edit-purchase-subtotal-val">${money(purchase.quantity * purchase.cost)}</strong>
-      </div>
-      <div class="calc-preview-row">
-        <span>Flete / Envío:</span>
-        <strong id="edit-purchase-expenses-val">${money(purchase.expenses || 0)}</strong>
-      </div>
-      <div class="calc-preview-row highlight">
-        <span>Total invertido:</span>
-        <strong class="green" id="edit-purchase-total-val">${money(purchase.total)}</strong>
-      </div>
-    </div>
-  `;
-
-  showModal({
-    icon: '✏️',
-    title: 'Editar compra',
-    subtitle: 'Modifica la cantidad de piezas recibidas, costos o referencia.',
-    formHtml,
-    onOpen: form => {
-      const qtyInput = form.querySelector('#edit-purchase-qty-input');
-      const costInput = form.querySelector('#edit-purchase-cost-input');
-      const expInput = form.querySelector('#edit-purchase-expenses-input');
-
-      const updateCalculations = () => {
-        const qty = Number(qtyInput.value) || 1;
-        const cost = Number(costInput.value) || 0;
-        const exp = Number(expInput.value) || 0;
-        const subtotal = qty * cost;
-        const total = subtotal + exp;
-
-        const subEl = document.getElementById('edit-purchase-subtotal-val');
-        const expEl = document.getElementById('edit-purchase-expenses-val');
-        const totEl = document.getElementById('edit-purchase-total-val');
-
-        if (subEl) subEl.textContent = money(subtotal);
-        if (expEl) expEl.textContent = money(exp);
-        if (totEl) totEl.textContent = money(total);
-      };
-
-      qtyInput.addEventListener('input', updateCalculations);
-      costInput.addEventListener('input', updateCalculations);
-      expInput.addEventListener('input', updateCalculations);
-    },
-    onSubmit: async formData => {
-      const newProductId = formData.get('product_id');
-      const newProduct = byId(state.products, newProductId);
-      if (!newProduct) throw new Error('Producto no encontrado');
-
-      const newQty = Number(formData.get('quantity')) || 1;
-      const newCost = Number(formData.get('cost')) || 0;
-      const newExpenses = Number(formData.get('expenses')) || 0;
-      const newTotal = (newQty * newCost) + newExpenses;
-
-      // Ajuste de inventario
-      const oldProduct = byId(state.products, purchase.product_id);
-      const oldQty = purchase.quantity;
-
-      if (oldProduct && oldProduct.id === newProduct.id) {
-        newProduct.stock = Math.max(0, newProduct.stock - oldQty + newQty);
-      } else {
-        if (oldProduct) oldProduct.stock = Math.max(0, oldProduct.stock - oldQty);
-        newProduct.stock += newQty;
-      }
-
-      purchase.purchase_date = formData.get('purchase_date') || today();
-      purchase.reference = formData.get('reference') || 'Surtido';
-      purchase.product_id = newProduct.id;
-      purchase.product_name = newProduct.name;
-      purchase.quantity = newQty;
-      purchase.cost = newCost;
-      purchase.expenses = newExpenses;
-      purchase.total = newTotal;
-
-      showToast('Compra actualizada');
-
-      if (supabase) {
-        try {
-          const updates = [
-            supabase.from('purchases').update(purchase).eq('id', purchase.id),
-            supabase.from('products').update({ stock: newProduct.stock }).eq('id', newProduct.id)
-          ];
-          if (oldProduct && oldProduct.id !== newProduct.id) {
-            updates.push(supabase.from('products').update({ stock: oldProduct.stock }).eq('id', oldProduct.id));
-          }
-          await Promise.all(updates);
-        } catch (e) {
-          console.warn('Error al actualizar compra en Supabase:', e);
         }
       }
     }
@@ -1892,7 +1821,7 @@ function openProductModal() {
           <label>Costo de compra (lo que te cuesta a ti)</label>
           <div class="input-addon-wrap">
             <span class="prefix">$</span>
-            <input name="cost" id="np-cost-input" type="number" step="0.01" min="0" placeholder="0.00" required />
+            <input name="cost" id="np-cost-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" required />
           </div>
         </div>
 
@@ -1900,13 +1829,13 @@ function openProductModal() {
           <label>Costo de venta al público (lo que cobras)</label>
           <div class="input-addon-wrap">
             <span class="prefix">$</span>
-            <input name="price" id="np-price-input" type="number" step="0.01" min="0" placeholder="0.00" required />
+            <input name="price" id="np-price-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" required />
           </div>
         </div>
 
         <div class="form-group full">
           <label>Existencia inicial (piezas disponibles)</label>
-          <input name="stock" id="np-stock-input" type="number" min="0" value="1" required />
+          <input name="stock" id="np-stock-input" type="number" inputmode="numeric" min="0" value="1" required />
         </div>
       </div>
 
@@ -1943,7 +1872,7 @@ function openProductModal() {
           <label>Costo total pagado por el paquete</label>
           <div class="input-addon-wrap">
             <span class="prefix">$</span>
-            <input name="pkg_total_cost" id="pkg-cost-input" type="number" step="0.01" min="0" value="0" placeholder="0.00" />
+            <input name="pkg_total_cost" id="pkg-cost-input" type="number" inputmode="decimal" step="0.01" min="0" value="0" placeholder="0.00" />
           </div>
           <small style="font-size: 11px; color: var(--muted); margin-top: 2px;">
             (Si fue un regalo o incentivo sin costo, déjalo en $0.00).
@@ -1953,14 +1882,14 @@ function openProductModal() {
 
       <div class="package-section">
         <div class="package-section-title">
-          <span>Artículos incluidos (se venderán a precio de revista)</span>
-          <span style="font-weight: 500; font-size: 11px; text-transform: none; color: var(--muted);">
-            Solo ingresa el precio al público de cada uno
-          </span>
+          <span>Artículos incluidos en el paquete</span>
+          <small style="font-size: 11px; font-weight: 500; text-transform: none; color: var(--muted);">
+            Se guardarán individualmente en el catálogo a su precio de revista
+          </small>
         </div>
 
         <div class="package-items-list" id="package-items-list">
-          <!-- Las filas de artículos del paquete se agregan dinámicamente -->
+          <!-- Tarjetas de artículos agregadas dinámicamente -->
         </div>
 
         <button type="button" class="btn btn-sm btn-outline btn-add-package-item" id="btn-add-pkg-item">
@@ -1970,15 +1899,15 @@ function openProductModal() {
 
       <div class="calc-preview" style="margin-top: 14px;">
         <div class="calc-preview-row">
-          <span>Total de artículos en el paquete:</span>
-          <strong id="pkg-summary-items">0 piezas</strong>
+          <span>Artículos en el paquete:</span>
+          <strong id="pkg-summary-items">0 pieza(s)</strong>
         </div>
         <div class="calc-preview-row">
-          <span>Venta total esperada (Precio de revista):</span>
-          <strong class="green" id="pkg-summary-retail">$0.00</strong>
+          <span>Valor total a precio de revista:</span>
+          <strong id="pkg-summary-retail">$0.00</strong>
         </div>
         <div class="calc-preview-row">
-          <span>Inversión pagada por el paquete:</span>
+          <span>Costo total invertido:</span>
           <strong id="pkg-summary-cost">$0.00</strong>
         </div>
         <div class="calc-preview-row highlight">
@@ -2040,12 +1969,12 @@ function openProductModal() {
         singleCategory.required = false;
         costInput.required = false;
         priceInput.required = false;
-        if (submitBtn) submitBtn.textContent = 'Guardar paquete y artículos';
+        if (submitBtn) submitBtn.textContent = 'Guardar paquete';
+
         if (pkgItemsList.children.length === 0) {
           addPackageItemRow();
           addPackageItemRow();
         }
-        updatePackageCalculations();
       });
 
       // Single calculations
@@ -2089,13 +2018,13 @@ function openProductModal() {
             </div>
             <div class="field">
               <label>Cant.</label>
-              <input class="pkg-item-qty" type="number" min="1" value="1" required />
+              <input class="pkg-item-qty" type="number" inputmode="numeric" min="1" value="1" required />
             </div>
             <div class="field">
               <label>Precio revista</label>
               <div class="input-addon-wrap">
                 <span class="prefix">$</span>
-                <input class="pkg-item-price" type="number" step="0.01" min="0" placeholder="0.00" required />
+                <input class="pkg-item-price" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" required />
               </div>
             </div>
           </div>
@@ -2104,7 +2033,6 @@ function openProductModal() {
         card.querySelector('.btn-remove-pkg-item').addEventListener('click', () => {
           if (pkgItemsList.children.length > 1) {
             card.remove();
-            // Re-number badges
             pkgItemsList.querySelectorAll('.package-item-card').forEach((c, i) => {
               c.querySelector('.package-item-number').textContent = `Artículo #${i + 1}`;
             });
@@ -2156,7 +2084,6 @@ function openProductModal() {
     },
     onSubmit: async (formData, form) => {
       if (mode === 'single') {
-        // MODO PRODUCTO INDIVIDUAL
         const newProduct = {
           id: crypto.randomUUID(),
           name: formData.get('name').trim(),
@@ -2179,7 +2106,6 @@ function openProductModal() {
           }
         }
       } else {
-        // MODO PAQUETE / SET DE REVISTA
         const pkgName = (formData.get('pkg_name') || 'Paquete promocional').trim();
         const pkgBrand = (formData.get('pkg_brand') || 'General').trim();
         const pkgCost = Number(formData.get('pkg_total_cost')) || 0;
@@ -2204,12 +2130,10 @@ function openProductModal() {
 
         if (rawItems.length === 0) throw new Error('Por favor escribe el nombre de al menos un artículo del paquete.');
 
-        // Crear los productos distribuyendo el costo proporcionalmente al precio de revista
         const createdProducts = [];
         rawItems.forEach(it => {
           let assignedUnitCost = 0;
           if (pkgCost > 0 && totalRetailSum > 0) {
-            // Prorrateo ponderado según el precio de revista
             assignedUnitCost = Math.round(((it.price / totalRetailSum) * pkgCost) * 100) / 100;
           } else if (pkgCost > 0) {
             const totalQty = rawItems.reduce((acc, r) => acc + r.qty, 0);
@@ -2229,7 +2153,6 @@ function openProductModal() {
           state.products.push(prod);
         });
 
-        // Registrar la compra del paquete si tuvo costo de inversión
         let newPurchase = null;
         if (pkgCost > 0) {
           newPurchase = {
@@ -2247,7 +2170,7 @@ function openProductModal() {
           state.purchases.push(newPurchase);
         }
 
-        showToast(`Paquete "${pkgName}" guardado: ${createdProducts.length} productos ingresados al catálogo a precio de revista.`, '📦');
+        showToast(`Paquete "${pkgName}" guardado: ${createdProducts.length} productos ingresados al catálogo.`, '📦');
 
         if (supabase) {
           try {
@@ -2289,7 +2212,7 @@ function openEditProductModal(product) {
         <label>Costo de compra (tu inversión)</label>
         <div class="input-addon-wrap">
           <span class="prefix">$</span>
-          <input name="cost" id="edit-cost-input" type="number" step="0.01" min="0" value="${product.cost}" required />
+          <input name="cost" id="edit-cost-input" type="number" inputmode="decimal" step="0.01" min="0" value="${product.cost}" required />
         </div>
       </div>
 
@@ -2297,13 +2220,13 @@ function openEditProductModal(product) {
         <label>Precio de venta al público (Precio revista)</label>
         <div class="input-addon-wrap">
           <span class="prefix">$</span>
-          <input name="price" id="edit-price-input" type="number" step="0.01" min="0" value="${product.price}" required />
+          <input name="price" id="edit-price-input" type="number" inputmode="decimal" step="0.01" min="0" value="${product.price}" required />
         </div>
       </div>
 
       <div class="form-group full">
         <label>Existencia actual (piezas)</label>
-        <input name="stock" type="number" min="0" value="${product.stock}" required />
+        <input name="stock" type="number" inputmode="numeric" min="0" value="${product.stock}" required />
       </div>
     </div>
 
@@ -2383,14 +2306,14 @@ function openCustomerModal() {
 
       <div class="form-group">
         <label>Teléfono / WhatsApp</label>
-        <input name="phone" placeholder="Ej. 55 1234 5678" />
+        <input name="phone" type="tel" inputmode="tel" placeholder="Ej. 55 1234 5678" />
       </div>
 
       <div class="form-group">
         <label>Saldo inicial que debe (opcional)</label>
         <div class="input-addon-wrap">
           <span class="prefix">$</span>
-          <input name="balance" type="number" step="0.01" min="0" value="0" />
+          <input name="balance" type="number" inputmode="decimal" step="0.01" min="0" value="0" />
         </div>
       </div>
 
@@ -2431,7 +2354,7 @@ function openCustomerModal() {
 }
 
 // -------------------------------------------------------------
-// MODAL 6: EDITAR CLIENTE (NUEVO)
+// MODAL 6: EDITAR CLIENTE
 // -------------------------------------------------------------
 function openEditCustomerModal(customer) {
   const formHtml = `
@@ -2443,14 +2366,14 @@ function openEditCustomerModal(customer) {
 
       <div class="form-group">
         <label>Teléfono / WhatsApp</label>
-        <input name="phone" value="${customer.phone || ''}" placeholder="Ej. 55 1234 5678" />
+        <input name="phone" type="tel" inputmode="tel" value="${customer.phone || ''}" placeholder="Ej. 55 1234 5678" />
       </div>
 
       <div class="form-group">
         <label>Saldo pendiente por cobrar</label>
         <div class="input-addon-wrap">
           <span class="prefix">$</span>
-          <input name="balance" type="number" step="0.01" min="0" value="${customer.balance || 0}" required />
+          <input name="balance" type="number" inputmode="decimal" step="0.01" min="0" value="${customer.balance || 0}" required />
         </div>
       </div>
 
@@ -2510,7 +2433,7 @@ function openPaymentModal(customer) {
         <label>Monto a abonar</label>
         <div class="input-addon-wrap">
           <span class="prefix">$</span>
-          <input name="amount" id="abono-amount-input" type="number" step="0.01" min="1" max="${customer.balance}" value="${customer.balance}" required />
+          <input name="amount" id="abono-amount-input" type="number" inputmode="decimal" step="0.01" min="1" max="${customer.balance}" value="${customer.balance}" required />
         </div>
       </div>
 
@@ -2583,6 +2506,163 @@ function openPaymentModal(customer) {
       }
     }
   });
+}
+
+// -------------------------------------------------------------
+// MODAL 8: ESTADO DEL SISTEMA, PWA Y RESPALDOS
+// -------------------------------------------------------------
+function openSyncInfoModal() {
+  const totalProducts = (state.products || []).length;
+  const totalSales = (state.sales || []).length;
+  const totalPurchases = (state.purchases || []).length;
+  const totalCustomers = (state.customers || []).length;
+  const isOnline = navigator.onLine;
+
+  const formHtml = `
+    <div class="sync-info-content">
+      <div class="sync-status-card ${supabase ? 'online' : 'offline'}">
+        <div class="sync-status-icon">${supabase ? '☁️' : '💾'}</div>
+        <div>
+          <h4>${supabase ? 'Conectado a la nube (Supabase)' : 'Modo local (Sin Supabase)'}</h4>
+          <p>${supabase
+            ? 'Tus registros se sincronizan en la nube automáticamente en tiempo real. Todos tus cambios están respaldados.'
+            : 'Tus datos se guardan de forma segura en este navegador. Toda la aplicación funciona al 100% incluso sin internet.'}
+          </p>
+          <div class="network-indicator">
+            <span class="status-dot ${isOnline ? 'online' : 'offline'}"></span>
+            <small>${isOnline ? 'Conexión a internet: Activa' : 'Sin conexión a internet (Operando fuera de línea)'}</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="sync-stats-grid">
+        <div class="sync-stat-item">
+          <b>${totalProducts}</b>
+          <small>Productos</small>
+        </div>
+        <div class="sync-stat-item">
+          <b>${totalCustomers}</b>
+          <small>Clientes</small>
+        </div>
+        <div class="sync-stat-item">
+          <b>${totalSales}</b>
+          <small>Ventas</small>
+        </div>
+        <div class="sync-stat-item">
+          <b>${totalPurchases}</b>
+          <small>Compras</small>
+        </div>
+      </div>
+
+      <div class="backup-section">
+        <h4 style="margin: 0 0 6px; font-size: 14px;">💾 Respaldo de seguridad de datos</h4>
+        <p style="font-size: 12.5px; color: var(--muted); margin: 0 0 12px; line-height: 1.4;">
+          Descarga un archivo con toda tu información para guardarlo en tu celular/computadora o transferirlo si cambias de equipo.
+        </p>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <button type="button" class="btn btn-secondary" id="btn-export-backup" style="flex: 1; justify-content: center;">
+            📥 Descargar respaldo JSON
+          </button>
+          <label class="btn btn-outline" style="flex: 1; justify-content: center; cursor: pointer;">
+            📤 Importar respaldo
+            <input type="file" id="input-import-backup" accept=".json" style="display: none;" />
+          </label>
+        </div>
+      </div>
+
+      <div style="padding: 14px; background: #fdfaf2; border: 1px solid #ebd7af; border-radius: 12px;">
+        <h4 style="margin: 0 0 6px; font-size: 14px; color: #7a4f00;">📲 ¿Cómo instalar Impulso como App?</h4>
+        <div style="font-size: 12.5px; color: #5c4314; line-height: 1.5;">
+          ${deferredPrompt ? `
+            <p>Tu navegador permite instalar Impulso directamente con un clic:</p>
+            <button type="button" class="btn btn-primary" id="btn-install-prompt-modal" style="width: 100%; justify-content: center; margin-top: 8px;">
+              📲 Instalar Impulso en este dispositivo
+            </button>
+          ` : `
+            <p><b>En Android (Chrome):</b> Toca el menú de tres puntos (⋮) arriba a la derecha y selecciona <b>"Instalar aplicación"</b> o <b>"Agregar a la pantalla principal"</b>.</p>
+            <p style="margin-top: 6px;"><b>En iPhone (Safari):</b> Toca el botón <b>Compartir</b> (el cuadrado con flecha hacia arriba ⎋) y selecciona <b>"Agregar al inicio"</b> ➕.</p>
+          `}
+        </div>
+      </div>
+    </div>
+  `;
+
+  showModal({
+    icon: '⚡',
+    title: 'Estado del sistema & Respaldos',
+    subtitle: 'Información de conectividad, almacenamiento local y copias de seguridad.',
+    formHtml,
+    onOpen: form => {
+      const exportBtn = form.querySelector('#btn-export-backup');
+      const importInput = form.querySelector('#input-import-backup');
+      const installBtn = form.querySelector('#btn-install-prompt-modal');
+
+      if (exportBtn) {
+        exportBtn.addEventListener('click', exportBackupJson);
+      }
+
+      if (importInput) {
+        importInput.addEventListener('change', e => {
+          const file = e.target.files[0];
+          if (file) importBackupJson(file);
+        });
+      }
+
+      if (installBtn && deferredPrompt) {
+        installBtn.addEventListener('click', async () => {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          if (outcome === 'accepted') {
+            showToast('¡Instalando Impulso!', '🎉');
+          }
+          deferredPrompt = null;
+        });
+      }
+    },
+    onSubmit: async () => {}
+  });
+}
+
+function exportBackupJson() {
+  const exportData = {
+    exportedAt: new Date().toISOString(),
+    version: '1.0',
+    app: 'Impulso',
+    data: state
+  };
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `impulso-respaldo-${today()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Respaldo descargado exitosamente', '📥');
+}
+
+function importBackupJson(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      const data = parsed.data || parsed;
+      if (data && Array.isArray(data.products) && Array.isArray(data.customers)) {
+        if (confirm(`¿Deseas restaurar este respaldo con ${data.products.length} productos y ${data.customers.length} clientes? Se actualizarán los datos actuales.`)) {
+          state = data;
+          saveLocal();
+          renderApp();
+          showToast('Respaldo restaurado correctamente', '✅');
+          const backdrop = document.getElementById('active-modal-backdrop');
+          if (backdrop) backdrop.click();
+        }
+      } else {
+        alert('El archivo seleccionado no tiene el formato de respaldo de Impulso.');
+      }
+    } catch (err) {
+      alert('Error al leer el archivo de respaldo: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
 }
 
 // -------------------------------------------------------------

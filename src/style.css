@@ -18,49 +18,85 @@
   --red-light: #fdedeb;
   --blue: #2980b9;
   --blue-light: #ebf5fb;
+  --whatsapp: #25d366;
+  --whatsapp-hover: #1ebc57;
   --shadow-sm: 0 2px 8px rgba(23, 35, 31, 0.04);
   --shadow: 0 16px 40px rgba(23, 35, 31, 0.07);
   --shadow-modal: 0 25px 60px rgba(15, 23, 20, 0.28);
   --radius-sm: 8px;
   --radius: 14px;
   --radius-lg: 20px;
+
+  /* Safe area variables for notched phones and modern devices */
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+  height: 100%;
+}
+
 body {
   margin: 0;
+  padding: 0;
   color: var(--ink);
   background: var(--paper);
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
+  overflow-x: hidden;
 }
 
 button, input, select, textarea {
   font-family: inherit;
 }
 
-button {
-  cursor: pointer;
+/* 16px font on mobile inputs to eliminate iOS Safari zoom */
+input, select, textarea {
+  font-size: 16px;
+}
+@media (min-width: 769px) {
+  input, select, textarea {
+    font-size: 13.5px;
+  }
 }
 
-/* App layout */
+button {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ========================================================
+   DESKTOP APP LAYOUT
+   ======================================================== */
 .shell {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 245px 1fr;
 }
 
-aside {
+aside, .desktop-sidebar {
   background: var(--ink);
   color: #f4f1e7;
   padding: 28px 18px;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
   border-right: 1px solid #23342e;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  overflow-y: auto;
+  z-index: 50;
 }
 
 .brand {
@@ -86,13 +122,13 @@ aside {
   color: #fffdf9;
 }
 
-nav {
+nav.desktop-nav {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-nav button {
+nav.desktop-nav button {
   border: 0;
   background: transparent;
   color: #c4d0c8;
@@ -105,25 +141,80 @@ nav button {
   align-items: center;
   gap: 10px;
   transition: background 0.18s, color 0.18s;
+  position: relative;
 }
 
-nav button:hover, nav button.active {
+nav.desktop-nav button:hover, nav.desktop-nav button.active {
   background: #2b453b;
   color: #fffdf7;
 }
 
-nav button.active {
+nav.desktop-nav button.active {
   box-shadow: inset 3px 0 0 #9fcab5;
 }
 
-.connection {
+.sidebar-badge {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 12px;
+  background: var(--red);
+  color: #fff;
+}
+.sidebar-badge.orange {
+  background: var(--orange);
+}
+
+/* Sidebar Install Card */
+.sidebar-install-card {
   margin-top: auto;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid #3c544a;
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sidebar-install-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar-install-icon {
+  font-size: 22px;
+}
+
+.sidebar-install-text b {
+  display: block;
+  font-size: 13px;
+  color: #fffdf9;
+}
+
+.sidebar-install-text small {
+  display: block;
+  font-size: 11px;
+  color: #a8b8b0;
+  line-height: 1.3;
+}
+
+.connection {
   border: 1px solid #3c544a;
   border-radius: 12px;
   padding: 14px;
   font-size: 12px;
   font-weight: 700;
   background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s;
+}
+
+.connection:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: #4f6e61;
 }
 
 .connection.online {
@@ -149,6 +240,7 @@ nav button.active {
   height: 8px;
   border-radius: 50%;
   margin-right: 6px;
+  vertical-align: middle;
 }
 
 .status-dot.online {
@@ -160,7 +252,9 @@ nav button.active {
   background: #f1c40f;
 }
 
-/* Main Area */
+/* ========================================================
+   MAIN CONTENT AREA
+   ======================================================== */
 main {
   max-width: 1380px;
   width: 100%;
@@ -196,9 +290,9 @@ header {
 
 h2 {
   font-family: 'Playfair Display', Georgia, serif;
-  font-size: clamp(28px, 3.8vw, 42px);
+  font-size: clamp(26px, 3.8vw, 42px);
   letter-spacing: -0.04em;
-  line-height: 1.05;
+  line-height: 1.08;
   margin: 0 0 6px;
   color: var(--ink);
 }
@@ -210,7 +304,9 @@ header p, .subtle {
   line-height: 1.45;
 }
 
-/* Metrics Cards */
+/* ========================================================
+   METRICS CARDS
+   ======================================================== */
 .metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -273,7 +369,9 @@ header p, .subtle {
   color: var(--orange);
 }
 
-/* Grid & Panels */
+/* ========================================================
+   GRID & PANELS
+   ======================================================== */
 .grid {
   display: grid;
   grid-template-columns: 1.25fr 0.95fr;
@@ -358,7 +456,9 @@ header p, .subtle {
   color: var(--orange);
 }
 
-/* Toolbars & Filters */
+/* ========================================================
+   TOOLBARS, FILTERS & VIEW SWITCHER
+   ======================================================== */
 .toolbar {
   display: flex;
   justify-content: space-between;
@@ -375,6 +475,35 @@ header p, .subtle {
   align-items: center;
 }
 
+.view-switch-toggle {
+  display: inline-flex;
+  background: #ebe7de;
+  border-radius: 9px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.view-switch-btn {
+  border: 0;
+  background: transparent;
+  padding: 6px 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.view-switch-btn.active {
+  background: #fff;
+  color: var(--primary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
 input, select, textarea {
   color: var(--ink);
   background: #fff;
@@ -382,12 +511,10 @@ input, select, textarea {
   border-radius: 9px;
   padding: 10px 13px;
   outline: none;
-  font-size: 13.5px;
   transition: border-color 0.18s, box-shadow 0.18s;
   box-sizing: border-box;
 }
 
-/* Quitar spinners nativos en inputs de número para evitar desbordes visuales */
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button {
   -webkit-appearance: none;
@@ -402,7 +529,9 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 3px rgba(29, 107, 85, 0.14);
 }
 
-/* Buttons */
+/* ========================================================
+   BUTTONS
+   ======================================================== */
 .btn {
   border: 0;
   border-radius: 9px;
@@ -415,6 +544,11 @@ input:focus, select:focus, textarea:focus {
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
+  user-select: none;
+}
+
+.btn:active {
+  transform: scale(0.97);
 }
 
 .btn-primary, .primary {
@@ -456,18 +590,35 @@ input:focus, select:focus, textarea:focus {
   background: #f8cfc8;
 }
 
+.btn-whatsapp {
+  background: var(--whatsapp);
+  color: #fff;
+  border: 0;
+  text-decoration: none;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(37, 211, 102, 0.25);
+}
+
+.btn-whatsapp:hover {
+  background: var(--whatsapp-hover);
+  color: #fff;
+}
+
 .btn-sm {
-  padding: 6px 10px;
+  padding: 6px 11px;
   font-size: 12px;
   border-radius: 7px;
 }
 
-/* Tables */
+/* ========================================================
+   TABLES (DESKTOP MODE)
+   ======================================================== */
 .table-wrap {
   overflow-x: auto;
   border-radius: var(--radius);
   border: 1px solid var(--line);
   background: var(--panel);
+  -webkit-overflow-scrolling: touch;
 }
 
 table {
@@ -537,6 +688,19 @@ tbody tr:hover td {
   opacity: 0.85;
 }
 
+.date-chip {
+  background: #eeebe2;
+  color: #4b5a53;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
 /* Pills and Badges */
 .pill {
   display: inline-flex;
@@ -577,6 +741,104 @@ tbody tr:hover td {
   text-align: center;
   padding: 36px 16px;
   font-size: 14px;
+}
+
+/* ========================================================
+   CARDS GRID (MOBILE-FIRST CARD VIEW)
+   ======================================================== */
+.cards-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.item-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 15px 16px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.item-card:hover {
+  border-color: #c7c2b5;
+  box-shadow: 0 4px 14px rgba(23, 35, 31, 0.06);
+}
+
+.item-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.item-card-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.item-card-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+.item-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  background: #fbf9f4;
+  border: 1px solid var(--line-subtle);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.metric-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.metric-mini small {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metric-mini span {
+  font-size: 13.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.item-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-subtle);
+  flex-wrap: wrap;
 }
 
 /* ========================================================
@@ -621,7 +883,10 @@ tbody tr:hover td {
   transform: translateY(0) scale(1);
 }
 
-/* Header fijo arriba */
+.modal-drag-handle {
+  display: none;
+}
+
 .modal-header {
   padding: 18px 24px 14px;
   display: flex;
@@ -688,7 +953,6 @@ tbody tr:hover td {
   color: var(--ink);
 }
 
-/* El formulario llena el espacio y permite scroll interno */
 .modal-card form {
   display: flex;
   flex-direction: column;
@@ -697,7 +961,6 @@ tbody tr:hover td {
   overflow: hidden;
 }
 
-/* Contenido del modal que hace scroll */
 .modal-body {
   padding: 20px 24px;
   overflow-y: auto;
@@ -707,7 +970,6 @@ tbody tr:hover td {
   overscroll-behavior: contain;
 }
 
-/* Barra de scroll visualmente agradable */
 .modal-body::-webkit-scrollbar {
   width: 7px;
 }
@@ -719,11 +981,7 @@ tbody tr:hover td {
   background: #d4cfc3;
   border-radius: 4px;
 }
-.modal-body::-webkit-scrollbar-thumb:hover {
-  background: #b6b0a3;
-}
 
-/* Modal Segment Toggle (Individual vs Paquete) */
 .modal-type-toggle {
   display: flex;
   background: #ebe7de;
@@ -812,7 +1070,6 @@ tbody tr:hover td {
   min-width: 0;
 }
 
-/* Dynamic preview inside modals */
 .calc-preview {
   margin-top: 18px;
   padding: 16px 18px;
@@ -848,7 +1105,6 @@ tbody tr:hover td {
   color: var(--orange);
 }
 
-/* Footer fijo abajo */
 .modal-footer {
   padding: 14px 24px 18px;
   display: flex;
@@ -861,7 +1117,7 @@ tbody tr:hover td {
 }
 
 /* ========================================================
-   SECCIÓN DE PAQUETE DE REVISTA (NUEVO TIPO)
+   SECCIÓN DE PAQUETE DE REVISTA
    ======================================================== */
 .package-section {
   display: flex;
@@ -941,7 +1197,6 @@ tbody tr:hover td {
   background: var(--red-light);
 }
 
-/* Grid de los campos del artículo del paquete */
 .package-item-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.2fr) 68px 115px;
@@ -992,7 +1247,89 @@ tbody tr:hover td {
   margin-top: 4px;
 }
 
-/* Toasts */
+/* ========================================================
+   SYNC & BACKUP MODAL STYLES
+   ======================================================== */
+.sync-info-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sync-status-card {
+  display: flex;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fbf9f4;
+}
+
+.sync-status-card.online {
+  border-color: #9fcab5;
+  background: #f0f7f3;
+}
+
+.sync-status-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.sync-status-card h4 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.sync-status-card p {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.network-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sync-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  text-align: center;
+}
+
+.sync-stat-item {
+  background: #f6f3eb;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 6px;
+}
+
+.sync-stat-item b {
+  display: block;
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.sync-stat-item small {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.backup-section {
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+/* ========================================================
+   TOASTS
+   ======================================================== */
 .toast-container {
   position: fixed;
   bottom: 24px;
@@ -1030,34 +1367,273 @@ tbody tr:hover td {
   }
 }
 
-/* Responsive */
+/* ========================================================
+   MOBILE APP ELEMENTS (TOPBAR, BOTTOM NAV, FAB)
+   ======================================================== */
+.mobile-topbar {
+  display: none;
+}
+
+.mobile-bottom-nav {
+  display: none;
+}
+
+.mobile-fab-wrap {
+  display: none;
+}
+
+/* ========================================================
+   RESPONSIVE: MOBILE & TABLETS
+   ======================================================== */
 @media (max-width: 920px) {
   .shell {
-    grid-template-columns: 1fr;
+    display: block;
+    min-height: 100vh;
+    padding-top: calc(58px + var(--sat));
+    padding-bottom: calc(72px + var(--sab));
   }
-  aside {
-    padding: 18px 20px;
-    gap: 18px;
-    border-right: 0;
-    border-bottom: 1px solid #23342e;
+
+  /* Ocultar sidebar desktop */
+  aside, .desktop-sidebar {
+    display: none !important;
   }
-  nav {
-    flex-direction: row;
-    overflow-x: auto;
-    padding-bottom: 4px;
+
+  /* Barra superior móvil fija */
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: calc(56px + var(--sat));
+    padding: var(--sat) 16px 0;
+    background: rgba(23, 35, 31, 0.95);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    z-index: 800;
   }
-  nav button {
-    white-space: nowrap;
-    padding: 9px 14px;
+
+  .mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
   }
-  .connection {
-    display: none;
+
+  .mobile-logo {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
   }
+
+  .mobile-brand-name {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 19px;
+    color: #fffdf9;
+    font-weight: 700;
+    line-height: 1.1;
+    display: block;
+  }
+
+  .mobile-brand-subtitle {
+    font-size: 10px;
+    color: #9fcab5;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    display: block;
+  }
+
+  .mobile-topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 11px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #dcefe4;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .status-chip.online {
+    color: #a4e5c4;
+    border-color: rgba(46, 204, 113, 0.35);
+  }
+
+  .status-chip.offline {
+    color: #f5d77f;
+    border-color: rgba(241, 196, 15, 0.35);
+  }
+
+  .btn-topbar-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: var(--primary);
+    color: #fff;
+    border: 0;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  }
+
+  /* Barra de navegación inferior móvil */
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: calc(62px + var(--sab));
+    padding-bottom: var(--sab);
+    background: rgba(255, 253, 249, 0.96);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -4px 20px rgba(23, 35, 31, 0.06);
+    z-index: 850;
+    justify-content: space-around;
+    align-items: center;
+  }
+
+  .nav-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 100%;
+    background: transparent;
+    border: 0;
+    color: var(--muted);
+    padding: 4px 2px;
+    transition: color 0.15s, transform 0.12s;
+    position: relative;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .nav-tab:active {
+    transform: scale(0.92);
+  }
+
+  .nav-tab.active {
+    color: var(--primary);
+  }
+
+  .nav-tab-icon {
+    font-size: 20px;
+    line-height: 1;
+    position: relative;
+    display: inline-block;
+  }
+
+  .nav-tab.active .nav-tab-icon {
+    transform: translateY(-1px);
+  }
+
+  .nav-tab-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  .nav-badge {
+    position: absolute;
+    top: -4px;
+    right: -8px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 10px;
+    background: var(--red);
+    color: #fff;
+    font-size: 9.5px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--panel);
+  }
+  .nav-badge.orange {
+    background: var(--orange);
+  }
+
+  /* Botón flotante móvil (FAB) */
+  .mobile-fab-wrap {
+    display: block;
+    position: fixed;
+    right: 18px;
+    bottom: calc(76px + var(--sab));
+    z-index: 840;
+  }
+
+  .mobile-fab {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--primary);
+    color: #fff;
+    border: 0;
+    border-radius: 28px;
+    padding: 12px 18px;
+    font-size: 13.5px;
+    font-weight: 800;
+    box-shadow: 0 8px 24px rgba(29, 107, 85, 0.45);
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-fab:active {
+    transform: scale(0.94);
+    box-shadow: 0 4px 12px rgba(29, 107, 85, 0.3);
+  }
+
+  .mobile-fab .fab-icon {
+    font-size: 17px;
+  }
+
+  /* Toasts ajustados para móvil para no tapar navegación */
+  .toast-container {
+    bottom: calc(78px + var(--sab));
+    right: 16px;
+    left: 16px;
+    align-items: center;
+  }
+
+  .toast {
+    width: 100%;
+    max-width: 360px;
+    justify-content: center;
+  }
+
+  /* Main & Layouts */
+  main {
+    padding: 18px 16px 28px;
+  }
+
+  header {
+    margin-bottom: 20px;
+  }
+
   .grid, .columns {
     grid-template-columns: 1fr;
-  }
-  main {
-    padding: 24px 18px 48px;
   }
 }
 
@@ -1072,31 +1648,79 @@ tbody tr:hover td {
   .package-item-grid .field:nth-child(2) {
     grid-column: 1 / -1;
   }
+  .sync-stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
-@media (max-width: 580px) {
+/* ========================================================
+   MODAL MOBILE DRAWER / BOTTOM SHEET (< 640px)
+   ======================================================== */
+@media (max-width: 640px) {
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal-card {
+    width: 100vw;
+    max-width: 100vw;
+    border-radius: 22px 22px 0 0;
+    max-height: 90vh;
+    border-bottom: 0;
+    margin: 0;
+    transform: translateY(100%);
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .modal-backdrop.open .modal-card {
+    transform: translateY(0);
+  }
+
+  .modal-drag-handle {
+    display: block;
+    width: 44px;
+    height: 5px;
+    background: #d4cfc3;
+    border-radius: 10px;
+    margin: 10px auto 4px;
+  }
+
+  .modal-header {
+    padding: 12px 18px 12px;
+  }
+
+  .modal-icon {
+    width: 36px;
+    height: 36px;
+    font-size: 19px;
+  }
+
+  .modal-title-box h3 {
+    font-size: 18px;
+  }
+
+  .modal-body {
+    padding: 14px 18px;
+  }
+
+  .modal-footer {
+    padding: 12px 18px calc(14px + var(--sab));
+    flex-direction: row;
+    gap: 10px;
+  }
+
+  .modal-footer .btn {
+    flex: 1;
+    justify-content: center;
+    padding: 12px 14px;
+  }
+
   .form-grid {
     grid-template-columns: 1fr;
+    gap: 12px;
   }
-  .modal-card {
-    border-radius: 16px;
-    width: 98vw;
-    max-height: calc(100vh - 20px);
-  }
-  .modal-header {
-    padding: 16px 18px 12px;
-  }
-  .modal-body {
-    padding: 16px 18px;
-  }
-  .modal-footer {
-    padding: 12px 18px 16px;
-    flex-direction: column-reverse;
-  }
-  .modal-footer .btn {
-    width: 100%;
-    justify-content: center;
-  }
+
   .header-actions {
     width: 100%;
   }
@@ -1104,7 +1728,46 @@ tbody tr:hover td {
     flex: 1;
     justify-content: center;
   }
+
   .metrics {
     grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .metric-card:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .metric-card {
+    padding: 14px 16px;
+    min-height: 100px;
+  }
+
+  .metric-card strong {
+    font-size: 24px;
+    margin: 6px 0 2px;
+  }
+
+  .item-card-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+  .item-card-metrics .metric-mini:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filters {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filters input, .filters select {
+    width: 100% !important;
+    min-width: 0 !important;
   }
 }
